@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HighP Desktop Agent</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1 class="brand-title">HighP Agent</h1>
+          <span class="brand-subtitle">Transparent Work Activity</span>
+        </div>
+      </div>
+      <div id="connectionStatus" class="connection-pill online">
+        <span class="dot"></span> Online
+      </div>
+    </header>
+
+    <!-- Login View (Hidden when logged in) -->
+    <section id="loginView" class="view-section">
+      <div class="card login-card">
+        <h2>Sign In to Work</h2>
+        <p class="card-desc">Authenticate with your employee credentials to track attendance and session activity.</p>
+        
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="apiUrl">Server API URL</label>
+            <input type="url" id="apiUrl" value="http://localhost:5000" required>
+          </div>
+          <div class="form-group">
+            <label for="email">Work Email</label>
+            <input type="email" id="email" placeholder="alex@acme.com" required>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="••••••••" required>
+          </div>
+          <button type="submit" id="loginBtn" class="btn btn-primary">Sign In & Connect</button>
+          <div id="loginError" class="error-msg"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Dashboard View (Shown when logged in) -->
+    <section id="dashboardView" class="view-section hidden">
+      <!-- User Profile Card -->
+      <div class="card profile-card">
+        <div class="user-info">
+          <div class="avatar" id="userAvatar">A</div>
+          <div>
+            <h3 id="userName">Alex Rivers</h3>
+            <p id="userCompany" class="subtext">Acme Corporation • Engineering</p>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost btn-sm" title="Log Out">Log Out</button>
+      </div>
+
+      <!-- Live Monitoring Status Card -->
+      <div class="card status-card">
+        <div class="status-header">
+          <span class="label">CURRENT STATUS</span>
+          <div id="statusBadge" class="status-badge status-offline">OFFLINE</div>
+        </div>
+
+        <div class="active-app-box">
+          <div class="app-icon" id="appIcon">💻</div>
+          <div class="app-details">
+            <span class="label">ACTIVE FOREGROUND APP</span>
+            <h4 id="currentAppName">VS Code</h4>
+          </div>
+        </div>
+
+        <!-- Timer Grid -->
+        <div class="timer-grid">
+          <div class="timer-item active-time">
+            <span class="timer-label">ACTIVE TIME</span>
+            <span class="timer-val" id="activeTimer">00:00:00</span>
+          </div>
+          <div class="timer-item idle-time">
+            <span class="timer-label">IDLE TIME</span>
+            <span class="timer-val" id="idleTimer">00:00:00</span>
+          </div>
+          <div class="timer-item break-time">
+            <span class="timer-label">BREAK TIME</span>
+            <span class="timer-val" id="breakTimer">00:00:00</span>
+          </div>
+        </div>
+
+        <!-- Primary Controls -->
+        <div class="action-buttons">
+          <button id="startWorkBtn" class="btn btn-success btn-lg">▶ Start Work</button>
+          <button id="endWorkBtn" class="btn btn-danger btn-lg hidden">■ End Work</button>
+          
+          <div id="breakControls" class="break-controls hidden">
+            <select id="breakReasonSelect" class="break-select">
+              <option value="LUNCH">🥪 Lunch Break</option>
+              <option value="COFFEE">☕ Coffee Break</option>
+              <option value="PERSONAL">🚶 Personal Break</option>
+              <option value="MEETING">👥 Offline Meeting</option>
+              <option value="OTHER">⏳ Other</option>
+            </select>
+            <button id="startBreakBtn" class="btn btn-warning">Take Break</button>
+            <button id="endBreakBtn" class="btn btn-success hidden">Resume Work</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Offline Queue Indicator -->
+      <div id="offlineQueueBar" class="queue-bar hidden">
+        <span>🔄 Queued Offline Events: <strong id="queueCount">0</strong></span>
+        <span class="queue-status">Syncing automatically</span>
+      </div>
+
+      <!-- Transparency & Privacy Disclosure -->
+      <div class="privacy-box">
+        <div class="privacy-header">
+          <span class="shield-icon">🛡️</span>
+          <strong>Privacy & Transparency Guarantee</strong>
+        </div>
+        <p>This agent only tracks foreground application names and active/idle intervals. It <strong>NEVER</strong> captures keystrokes, passwords, private chats, screenshots, webcam, or microphone.</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
