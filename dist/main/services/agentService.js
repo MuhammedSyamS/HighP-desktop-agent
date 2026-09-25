@@ -10,13 +10,13 @@ const uuid_1 = require("uuid");
 const windowTracker_1 = require("../tracker/windowTracker");
 const idleTracker_1 = require("../tracker/idleTracker");
 const offlineQueue_1 = require("../queue/offlineQueue");
-const shared_1 = require("@highp/shared");
+const enums_1 = require("../../shared/enums");
 class AgentService {
     windowTracker = new windowTracker_1.WindowTracker();
     idleTracker = new idleTracker_1.IdleTracker();
     offlineQueue = new offlineQueue_1.OfflineQueue();
     config = {
-        apiUrl: 'http://localhost:5000',
+        apiUrl: 'https://highpbackend.vercel.app',
         idleThresholdMinutes: 5,
         heartbeatIntervalSeconds: 30
     };
@@ -27,7 +27,7 @@ class AgentService {
     deviceIdentifier;
     isWorking = false;
     isOnBreak = false;
-    currentStatus = shared_1.ActivityState.OFFLINE;
+    currentStatus = enums_1.ActivityState.OFFLINE;
     currentApp = 'Desktop';
     currentProcess = 'explorer';
     currentAppStartTime = new Date();
@@ -105,7 +105,7 @@ class AgentService {
         this.token = null;
         this.user = null;
         this.company = null;
-        this.currentStatus = shared_1.ActivityState.OFFLINE;
+        this.currentStatus = enums_1.ActivityState.OFFLINE;
         this.notifyStateChange();
     }
     async registerDevice() {
@@ -137,7 +137,7 @@ class AgentService {
             this.currentSessionId = res.data.data._id;
             this.isWorking = true;
             this.isOnBreak = false;
-            this.currentStatus = shared_1.ActivityState.ACTIVE;
+            this.currentStatus = enums_1.ActivityState.ACTIVE;
             this.currentAppStartTime = new Date();
             this.notifyStateChange();
         }
@@ -146,7 +146,7 @@ class AgentService {
             this.currentSessionId = `local-${(0, uuid_1.v4)()}`;
             this.isWorking = true;
             this.isOnBreak = false;
-            this.currentStatus = shared_1.ActivityState.ACTIVE;
+            this.currentStatus = enums_1.ActivityState.ACTIVE;
             this.currentAppStartTime = new Date();
             this.notifyStateChange();
         }
@@ -163,11 +163,11 @@ class AgentService {
         }
         this.isWorking = false;
         this.isOnBreak = false;
-        this.currentStatus = shared_1.ActivityState.OFFLINE;
+        this.currentStatus = enums_1.ActivityState.OFFLINE;
         this.currentSessionId = undefined;
         this.notifyStateChange();
     }
-    async startBreak(reason = shared_1.BreakReason.OTHER, note) {
+    async startBreak(reason = enums_1.BreakReason.OTHER, note) {
         if (!this.isWorking)
             return;
         this.flushCurrentAppEvent();
@@ -180,7 +180,7 @@ class AgentService {
             }
         }
         this.isOnBreak = true;
-        this.currentStatus = shared_1.ActivityState.BREAK;
+        this.currentStatus = enums_1.ActivityState.BREAK;
         this.notifyStateChange();
     }
     async endBreak() {
@@ -195,7 +195,7 @@ class AgentService {
             }
         }
         this.isOnBreak = false;
-        this.currentStatus = shared_1.ActivityState.ACTIVE;
+        this.currentStatus = enums_1.ActivityState.ACTIVE;
         this.currentAppStartTime = new Date();
         this.notifyStateChange();
     }
@@ -207,7 +207,7 @@ class AgentService {
         if (durationSeconds > 0 && this.currentApp) {
             const event = {
                 eventId: (0, uuid_1.v4)(),
-                type: shared_1.ActivityEventType.APPLICATION_FOCUS,
+                type: enums_1.ActivityEventType.APPLICATION_FOCUS,
                 applicationName: this.currentApp,
                 processName: this.currentProcess,
                 startedAt: this.currentAppStartTime.toISOString(),
@@ -255,16 +255,16 @@ class AgentService {
         const idleThresholdSec = this.config.idleThresholdMinutes * 60;
         const isSystemIdle = sysIdleSec >= idleThresholdSec;
         if (isSystemIdle) {
-            if (this.currentStatus !== shared_1.ActivityState.IDLE) {
+            if (this.currentStatus !== enums_1.ActivityState.IDLE) {
                 this.flushCurrentAppEvent();
-                this.currentStatus = shared_1.ActivityState.IDLE;
+                this.currentStatus = enums_1.ActivityState.IDLE;
                 this.notifyStateChange();
             }
             this.idleSeconds += 2;
         }
         else {
-            if (this.currentStatus === shared_1.ActivityState.IDLE) {
-                this.currentStatus = shared_1.ActivityState.ACTIVE;
+            if (this.currentStatus === enums_1.ActivityState.IDLE) {
+                this.currentStatus = enums_1.ActivityState.ACTIVE;
                 this.currentAppStartTime = new Date();
                 this.notifyStateChange();
             }

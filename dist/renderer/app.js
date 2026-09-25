@@ -102,7 +102,7 @@ function updateUI(state) {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
-  const apiUrl = document.getElementById('apiUrl').value;
+  const apiUrl = (document.getElementById('apiUrl').value || '').trim() || 'https://highpbackend.vercel.app';
   const email = document.getElementById('email').value;
   const pass = document.getElementById('password').value;
 

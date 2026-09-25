@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { AgentService } from './services/agentService';
-import { ActivityState } from '@highp/shared';
+import { ActivityState } from '../shared/enums';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;

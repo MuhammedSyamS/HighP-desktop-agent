@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
-import { ActivityEventType } from '@highp/shared';
+import { ActivityEventType } from '../../shared/enums';
 
 export interface QueuedActivityEvent {
   eventId: string;

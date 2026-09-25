@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WindowTracker, ActiveWindowInfo } from '../tracker/windowTracker';
 import { IdleTracker } from '../tracker/idleTracker';
 import { OfflineQueue, QueuedActivityEvent } from '../queue/offlineQueue';
-import { ActivityState, ActivityEventType, BreakReason } from '@highp/shared';
+import { ActivityState, ActivityEventType, BreakReason } from '../../shared/enums';
 
 export interface AgentConfig {
   apiUrl: string;
@@ -36,7 +36,7 @@ export class AgentService {
   private offlineQueue = new OfflineQueue();
 
   private config: AgentConfig = {
-    apiUrl: 'http://localhost:5000',
+    apiUrl: 'https://highpbackend.vercel.app',
     idleThresholdMinutes: 5,
     heartbeatIntervalSeconds: 30
   };

@@ -1,23 +1,50 @@
 {
-  "name": "@highp/desktop-agent",
+  "name": "highp-desktop-agent",
   "version": "1.0.0",
-  "private": true,
+  "description": "HighP Workforce Transparency & Activity Desktop Agent",
+  "author": "HighP Haus",
   "main": "./dist/main/index.js",
   "scripts": {
     "build": "tsc && npm run copy-assets",
     "copy-assets": "node scripts/copy-assets.js",
     "start": "electron .",
-    "dev": "tsc && node scripts/copy-assets.js && electron ."
+    "dev": "tsc && node scripts/copy-assets.js && electron .",
+    "dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
-    "@highp/shared": "*",
     "axios": "^1.7.9",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
     "@types/uuid": "^10.0.0",
-    "electron": "^33.2.1",
+    "electron": "33.2.1",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.7.3"
+  },
+  "build": {
+    "appId": "com.highphaus.desktopagent",
+    "productName": "HighP Agent",
+    "electronVersion": "33.2.1",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HighP Agent"
+    }
   }
 }
