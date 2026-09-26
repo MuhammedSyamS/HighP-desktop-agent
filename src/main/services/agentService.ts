@@ -115,7 +115,7 @@ export class AgentService {
   }
 
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
-    this.config.apiUrl = (apiUrl || 'http://localhost:5000').replace(/\/$/, '');
+    this.config.apiUrl = (apiUrl || process.env.HIGHP_API_URL || 'https://highpbackend.vercel.app').replace(/\/$/, '');
     try {
       const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password });
       if (res.data && res.data.data) {
