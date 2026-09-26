@@ -1,7 +1,4 @@
-import { exec } from 'child_process';
-import util from 'util';
-
-const execAsync = util.promisify(exec);
+import { win32Bridge } from './win32Bridge';
 
 export interface ActiveWindowInfo {
   applicationName: string;
@@ -39,36 +36,6 @@ const KNOWN_PROCESS_NAMES: Record<string, string> = {
   obsidian: 'Obsidian'
 };
 
-const POWERSHELL_COMMAND = `powershell -NoProfile -NonInteractive -Command "
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public class WinUtil {
-    [DllImport(\\"user32.dll\\")]
-    public static extern IntPtr GetForegroundWindow();
-    [DllImport(\\"user32.dll\\", SetLastError=true, CharSet=CharSet.Auto)]
-    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport(\\"user32.dll\\", SetLastError=true)]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-}
-'@ -ErrorAction SilentlyContinue
-
-$hwnd = [WinUtil]::GetForegroundWindow()
-if ($hwnd -ne [IntPtr]::Zero) {
-    $pidOut = 0
-    [WinUtil]::GetWindowThreadProcessId($hwnd, [ref]$pidOut)
-    $sb = New-Object System.Text.StringBuilder 256
-    [WinUtil]::GetWindowText($hwnd, $sb, 256) | Out-Null
-    $title = $sb.ToString()
-    $p = Get-Process -Id $pidOut -ErrorAction SilentlyContinue
-    $procName = if ($p) { $p.ProcessName } else { 'Unknown' }
-    [PSCustomObject]@{ Process = $procName; Title = $title } | ConvertTo-Json -Compress
-} else {
-    [PSCustomObject]@{ Process = 'Idle'; Title = 'Desktop' } | ConvertTo-Json -Compress
-}
-"`;
-
 export const sanitizeAppName = (processName: string, title?: string): string => {
   const cleanProc = (processName || '').toLowerCase().trim();
   if (KNOWN_PROCESS_NAMES[cleanProc]) {
@@ -76,7 +43,7 @@ export const sanitizeAppName = (processName: string, title?: string): string => 
   }
 
   // Capitalize clean process name if not in map
-  if (processName && processName !== 'Unknown') {
+  if (processName && processName !== 'Unknown' && processName !== 'Idle') {
     return processName.charAt(0).toUpperCase() + processName.slice(1);
   }
 
@@ -91,27 +58,24 @@ export class WindowTracker {
   };
 
   public async getActiveWindow(): Promise<ActiveWindowInfo> {
-    // Only run real Windows Win32 query on Windows platforms
     if (process.platform !== 'win32') {
       return this.lastInfo;
     }
 
     try {
-      const { stdout } = await execAsync(POWERSHELL_COMMAND, { timeout: 3000 });
-      const parsed = JSON.parse(stdout.trim());
-      const proc = parsed.Process || 'Unknown';
-      const title = parsed.Title || '';
-
+      const snapshot = win32Bridge.getSnapshot();
+      const proc = snapshot.processName || 'Unknown';
+      const title = snapshot.windowTitle || '';
       const appName = sanitizeAppName(proc, title);
 
       this.lastInfo = {
         applicationName: appName,
         processName: proc,
-        windowTitleSanitized: appName // Keep privacy safe: do not store personal tab contents
+        windowTitleSanitized: appName
       };
 
       return this.lastInfo;
-    } catch (err) {
+    } catch {
       return this.lastInfo;
     }
   }

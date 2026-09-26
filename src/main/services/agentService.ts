@@ -36,7 +36,7 @@ export class AgentService {
   private offlineQueue = new OfflineQueue();
 
   private config: AgentConfig = {
-    apiUrl: 'https://highpbackend.vercel.app',
+    apiUrl: process.env.HIGHP_API_URL || 'http://localhost:5000',
     idleThresholdMinutes: 5,
     heartbeatIntervalSeconds: 30
   };
