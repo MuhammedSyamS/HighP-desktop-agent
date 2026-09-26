@@ -75,7 +75,7 @@
           <div class="app-icon" id="appIcon">💻</div>
           <div class="app-details">
             <span class="label">ACTIVE FOREGROUND APP</span>
-            <h4 id="currentAppName">System / Desktop</h4>
+            <h4 id="currentAppName">Detecting active application...</h4>
           </div>
         </div>
 
@@ -111,6 +111,28 @@
             <button id="startBreakBtn" class="btn btn-warning">Take Break</button>
             <button id="endBreakBtn" class="btn btn-success hidden">Resume Work</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Diagnostics Panel (Requirement #45) -->
+      <div class="card diag-card">
+        <div class="diag-header">
+          <span class="label">AGENT & TELEMETRY STATUS</span>
+          <span id="diagSyncPill" class="sync-pill synced">Synced</span>
+        </div>
+        <div class="diag-grid">
+          <div class="diag-row"><span class="diag-k">Connection:</span><span id="diagConn" class="diag-v">Connected</span></div>
+          <div class="diag-row"><span class="diag-k">Server:</span><span id="diagServer" class="diag-v">Connected</span></div>
+          <div class="diag-row"><span class="diag-k">Device:</span><span id="diagDevice" class="diag-v">Registered</span></div>
+          <div class="diag-row"><span class="diag-k">Session:</span><span id="diagSession" class="diag-v">No Active Session</span></div>
+          <div class="diag-row"><span class="diag-k">Current App:</span><span id="diagApp" class="diag-v">-</span></div>
+          <div class="diag-row"><span class="diag-k">Status:</span><span id="diagStatus" class="diag-v">Offline</span></div>
+          <div class="diag-row"><span class="diag-k">Offline Queue:</span><span id="diagQueue" class="diag-v">0</span></div>
+          <div class="diag-row"><span class="diag-k">Last Sync:</span><span id="diagSync" class="diag-v">Never</span></div>
+          <div class="diag-row"><span class="diag-k">Last Heartbeat:</span><span id="diagHeartbeat" class="diag-v">Never</span></div>
+        </div>
+        <div id="telemetryErrorAlert" class="telemetry-error-alert hidden">
+          ⚠️ <strong>Telemetry Notice:</strong> <span id="telemetryErrorText"></span>
         </div>
       </div>
 

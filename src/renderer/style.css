@@ -344,3 +344,74 @@ input:focus, select:focus {
 .hidden {
   display: none !important;
 }
+
+/* Diagnostics Panel Styles */
+.diag-card {
+  margin-top: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+}
+
+.diag-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sync-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.sync-pill.synced {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34D399;
+  border: 1px solid #10B981;
+}
+
+.sync-pill.queuing {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FBBF24;
+  border: 1px solid #F59E0B;
+}
+
+.diag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 11px;
+}
+
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+.diag-k {
+  color: var(--text-muted);
+}
+
+.diag-v {
+  color: var(--text-secondary);
+  font-weight: 600;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-error-alert {
+  margin-top: 8px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--status-danger);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #FCA5A5;
+}

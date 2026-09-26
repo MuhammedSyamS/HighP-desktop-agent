@@ -25,6 +25,20 @@ const endBreakBtn = document.getElementById('endBreakBtn');
 const offlineQueueBar = document.getElementById('offlineQueueBar');
 const queueCount = document.getElementById('queueCount');
 
+// Diagnostics elements
+const diagConn = document.getElementById('diagConn');
+const diagServer = document.getElementById('diagServer');
+const diagDevice = document.getElementById('diagDevice');
+const diagSession = document.getElementById('diagSession');
+const diagApp = document.getElementById('diagApp');
+const diagStatus = document.getElementById('diagStatus');
+const diagQueue = document.getElementById('diagQueue');
+const diagSync = document.getElementById('diagSync');
+const diagHeartbeat = document.getElementById('diagHeartbeat');
+const diagSyncPill = document.getElementById('diagSyncPill');
+const telemetryErrorAlert = document.getElementById('telemetryErrorAlert');
+const telemetryErrorText = document.getElementById('telemetryErrorText');
+
 function formatSeconds(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -56,8 +70,45 @@ function updateUI(state) {
     statusBadge.textContent = state.currentStatus;
     statusBadge.className = `status-badge status-${state.currentStatus.toLowerCase()}`;
 
-    // App Name
-    currentAppName.textContent = state.currentApplication || 'System / Desktop';
+    // App Name - Truthful, never fake "System / Desktop"
+    if (!state.isWorking) {
+      currentAppName.textContent = 'Session not active';
+    } else if (state.isOnBreak) {
+      currentAppName.textContent = 'On Break';
+    } else if (state.currentApplication) {
+      currentAppName.textContent = state.currentApplication;
+    } else {
+      currentAppName.textContent = 'Telemetry unavailable';
+    }
+
+    // Diagnostics Panel (Requirement #45)
+    if (diagConn) diagConn.textContent = state.isOnline ? 'Connected' : 'Disconnected (Offline)';
+    if (diagServer) diagServer.textContent = state.isOnline ? 'Reachable' : 'Unreachable';
+    if (diagDevice) diagDevice.textContent = state.deviceId ? `Registered (${state.deviceId})` : 'Unregistered';
+    if (diagSession) diagSession.textContent = state.sessionId ? `Active (${state.sessionId.slice(0, 8)}...)` : 'None';
+    if (diagApp) diagApp.textContent = state.currentApplication || 'None';
+    if (diagStatus) diagStatus.textContent = state.currentStatus;
+    if (diagQueue) diagQueue.textContent = String(state.queuedEventsCount || 0);
+    if (diagSync) diagSync.textContent = state.lastSyncTime || 'Pending';
+    if (diagHeartbeat) diagHeartbeat.textContent = state.lastHeartbeatTime || 'Pending';
+
+    if (diagSyncPill) {
+      if ((state.queuedEventsCount || 0) > 0) {
+        diagSyncPill.className = 'sync-pill queuing';
+        diagSyncPill.textContent = `${state.queuedEventsCount} Queued`;
+      } else {
+        diagSyncPill.className = 'sync-pill synced';
+        diagSyncPill.textContent = 'Synced';
+      }
+    }
+
+    // Error Alert
+    if (state.telemetryError) {
+      telemetryErrorAlert.classList.remove('hidden');
+      telemetryErrorText.textContent = state.telemetryError;
+    } else {
+      telemetryErrorAlert.classList.add('hidden');
+    }
 
     // Timers
     activeTimer.textContent = formatSeconds(state.activeSeconds || 0);

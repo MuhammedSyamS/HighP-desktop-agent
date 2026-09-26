@@ -5,10 +5,12 @@
   "author": "HighP Haus",
   "main": "./dist/main/index.js",
   "scripts": {
-    "build": "tsc && npm run copy-assets",
+    "build:native": "node scripts/build-native.js",
+    "build": "npm run build:native && tsc && npm run copy-assets",
     "copy-assets": "node scripts/copy-assets.js",
+    "telemetry:diagnose": "ts-node src/scripts/diagnose.ts",
     "start": "electron .",
-    "dev": "tsc && node scripts/copy-assets.js && electron .",
+    "dev": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win"
   },
   "dependencies": {
@@ -31,7 +33,15 @@
     },
     "files": [
       "dist/**/*",
+      "bin/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [

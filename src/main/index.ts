@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, powerMonitor } from 'electron';
 import path from 'path';
 import { AgentService } from './services/agentService';
 import { ActivityState } from '../shared/enums';
@@ -6,6 +6,12 @@ import { ActivityState } from '../shared/enums';
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const agentService = new AgentService();
+
+// Register powerMonitor listeners for sleep/resume/lock/unlock
+powerMonitor.on('suspend', () => agentService.handleSystemSleep());
+powerMonitor.on('resume', () => agentService.handleSystemResume());
+powerMonitor.on('lock-screen', () => agentService.handleScreenLock());
+powerMonitor.on('unlock-screen', () => agentService.handleScreenUnlock());
 
 let isQuitting = false;
 

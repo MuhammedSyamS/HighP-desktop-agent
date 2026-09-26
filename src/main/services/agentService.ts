@@ -1,9 +1,9 @@
 import axios from 'axios';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import { WindowTracker, ActiveWindowInfo } from '../tracker/windowTracker';
-import { IdleTracker } from '../tracker/idleTracker';
-import { OfflineQueue, QueuedActivityEvent } from '../queue/offlineQueue';
+import { nativeBridge } from '../tracker/nativeBridge';
+import { resolveApplication } from '../tracker/appResolver';
+import { OfflineQueue, QueuedActivityItem } from '../queue/offlineQueue';
 import { ActivityState, ActivityEventType, BreakReason } from '../../shared/enums';
 
 export interface AgentConfig {
@@ -28,17 +28,18 @@ export interface AgentState {
   companyName?: string;
   isOnline: boolean;
   queuedEventsCount: number;
+  lastHeartbeatTime?: string;
+  lastSyncTime?: string;
+  telemetryError?: string;
 }
 
 export class AgentService {
-  private windowTracker = new WindowTracker();
-  private idleTracker = new IdleTracker();
   private offlineQueue = new OfflineQueue();
 
   private config: AgentConfig = {
     apiUrl: process.env.HIGHP_API_URL || 'http://localhost:5000',
     idleThresholdMinutes: 5,
-    heartbeatIntervalSeconds: 30
+    heartbeatIntervalSeconds: 15
   };
 
   private token: string | null = null;
@@ -50,10 +51,15 @@ export class AgentService {
   private isWorking = false;
   private isOnBreak = false;
   private currentStatus: ActivityState = ActivityState.OFFLINE;
-  private currentApp: string = 'Desktop';
-  private currentProcess: string = 'explorer';
-  private currentAppStartTime: Date = new Date();
 
+  // Active tracking state
+  private currentApp: string = 'Unknown Application';
+  private currentProcess: string = 'unknown.exe';
+  private currentCategory: string = 'Other';
+  private currentAppStartTime: Date = new Date();
+  private currentAppStartMono: bigint = process.hrtime.bigint();
+
+  // Visual local display counters (synced with server)
   private activeSeconds = 0;
   private idleSeconds = 0;
   private breakSeconds = 0;
@@ -61,12 +67,18 @@ export class AgentService {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private trackingTimer: NodeJS.Timeout | null = null;
   private syncTimer: NodeJS.Timeout | null = null;
+
   private isOnline = true;
+  private lastHeartbeatTime?: string;
+  private lastSyncTime?: string;
+  private telemetryError?: string;
 
   private onStateChangeCallback?: (state: AgentState) => void;
 
   constructor() {
-    this.deviceIdentifier = `DEV-${os.hostname()}-${os.platform()}`;
+    this.deviceIdentifier = `DEV-${os.hostname().toUpperCase()}-${os.platform().toUpperCase()}`;
+    // Start native Win32 bridge on initialization
+    nativeBridge.start();
   }
 
   public setStateChangeCallback(cb: (state: AgentState) => void): void {
@@ -89,7 +101,10 @@ export class AgentService {
       employeeName: this.user ? `${this.user.firstName} ${this.user.lastName}` : undefined,
       companyName: this.company?.name,
       isOnline: this.isOnline,
-      queuedEventsCount: this.offlineQueue.size()
+      queuedEventsCount: this.offlineQueue.size(),
+      lastHeartbeatTime: this.lastHeartbeatTime,
+      lastSyncTime: this.lastSyncTime,
+      telemetryError: this.telemetryError
     };
   }
 
@@ -100,7 +115,7 @@ export class AgentService {
   }
 
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
-    this.config.apiUrl = apiUrl.replace(/\/$/, '');
+    this.config.apiUrl = (apiUrl || 'http://localhost:5000').replace(/\/$/, '');
     try {
       const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password });
       if (res.data && res.data.data) {
@@ -123,8 +138,8 @@ export class AgentService {
         return true;
       }
       return false;
-    } catch (err) {
-      console.error('[AgentService] Login error:', err);
+    } catch (err: any) {
+      console.error('[AgentService] Login error:', err.message);
       throw err;
     }
   }
@@ -160,8 +175,8 @@ export class AgentService {
         { headers: { Authorization: `Bearer ${this.token}` } }
       );
       this.isOnline = true;
-    } catch (err) {
-      console.error('[AgentService] Device registration failed (will retry):', err);
+    } catch (err: any) {
+      console.warn('[AgentService] Device registration error:', err.message);
     }
   }
 
@@ -179,20 +194,22 @@ export class AgentService {
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
       this.currentAppStartTime = new Date();
+      this.currentAppStartMono = process.hrtime.bigint();
       this.notifyStateChange();
-    } catch (err) {
-      // Offline fallback: start session locally
+    } catch (err: any) {
+      console.warn('[AgentService] Start session online failed, using offline session:', err.message);
       this.currentSessionId = `local-${uuidv4()}`;
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
       this.currentAppStartTime = new Date();
+      this.currentAppStartMono = process.hrtime.bigint();
       this.notifyStateChange();
     }
   }
 
   public async endWork(): Promise<void> {
-    this.flushCurrentAppEvent();
+    this.flushCurrentInterval();
 
     if (this.token && this.currentSessionId && !this.currentSessionId.startsWith('local-')) {
       try {
@@ -201,8 +218,8 @@ export class AgentService {
           { sessionId: this.currentSessionId, endReason: 'Agent Stopped' },
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err) {
-        console.error('[AgentService] Error ending session online:', err);
+      } catch (err: any) {
+        console.warn('[AgentService] Error ending session online:', err.message);
       }
     }
 
@@ -215,7 +232,7 @@ export class AgentService {
 
   public async startBreak(reason: BreakReason | string = BreakReason.OTHER, note?: string): Promise<void> {
     if (!this.isWorking) return;
-    this.flushCurrentAppEvent();
+    this.flushCurrentInterval();
 
     if (this.token) {
       try {
@@ -224,8 +241,8 @@ export class AgentService {
           { reason, note },
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err) {
-        console.error('[AgentService] Error starting break:', err);
+      } catch (err: any) {
+        console.warn('[AgentService] Error starting break online:', err.message);
       }
     }
 
@@ -244,54 +261,57 @@ export class AgentService {
           {},
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err) {
-        console.error('[AgentService] Error ending break:', err);
+      } catch (err: any) {
+        console.warn('[AgentService] Error ending break online:', err.message);
       }
     }
 
     this.isOnBreak = false;
     this.currentStatus = ActivityState.ACTIVE;
     this.currentAppStartTime = new Date();
+    this.currentAppStartMono = process.hrtime.bigint();
     this.notifyStateChange();
   }
 
-  private flushCurrentAppEvent(): void {
+  // Close active interval and enqueue to offline queue using monotonic elapsed duration
+  private flushCurrentInterval(type: ActivityEventType = ActivityEventType.APPLICATION_FOCUS): void {
     if (!this.isWorking || this.isOnBreak || !this.currentSessionId) return;
 
     const now = new Date();
-    const durationSeconds = Math.max(0, Math.round((now.getTime() - this.currentAppStartTime.getTime()) / 1000));
+    // Calculate elapsed time from monotonic clock to prevent clock drift / adjustments
+    const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
+    const durationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
 
-    if (durationSeconds > 0 && this.currentApp) {
-      const event: QueuedActivityEvent = {
-        eventId: uuidv4(),
-        type: ActivityEventType.APPLICATION_FOCUS,
+    if (durationSeconds >= 1 && this.currentApp && this.currentApp !== 'Unknown Application') {
+      this.offlineQueue.enqueue(uuidv4(), type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
+        windowTitleSanitized: this.currentApp,
         startedAt: this.currentAppStartTime.toISOString(),
         endedAt: now.toISOString(),
         durationSeconds
-      };
-
-      this.offlineQueue.enqueue(event);
-      this.currentAppStartTime = now;
+      });
     }
+
+    this.currentAppStartTime = now;
+    this.currentAppStartMono = process.hrtime.bigint();
   }
 
   private startLoops(): void {
     this.stopLoops();
 
-    // 1. High-frequency tracking loop (every 2 seconds)
+    // 1. High-frequency tracking loop (every 1 second)
     this.trackingTimer = setInterval(async () => {
       await this.runTrackingTick();
-    }, 2000);
+    }, 1000);
 
-    // 2. Heartbeat loop (every 15-30 seconds)
-    const hbIntervalMs = (this.config.heartbeatIntervalSeconds || 30) * 1000;
+    // 2. Heartbeat presence loop (every 15 seconds)
+    const hbIntervalMs = (this.config.heartbeatIntervalSeconds || 15) * 1000;
     this.heartbeatTimer = setInterval(async () => {
       await this.sendHeartbeat();
     }, hbIntervalMs);
 
-    // 3. Offline queue sync loop (every 10 seconds)
+    // 3. Resilient offline queue sync loop (every 10 seconds)
     this.syncTimer = setInterval(async () => {
       await this.syncQueuedEvents();
     }, 10000);
@@ -307,40 +327,55 @@ export class AgentService {
     if (!this.isWorking) return;
 
     if (this.isOnBreak) {
-      this.breakSeconds += 2;
+      this.breakSeconds += 1;
       this.notifyStateChange();
       return;
     }
 
-    // 1. Check Idle Status
-    const sysIdleSec = await this.idleTracker.getSystemIdleSeconds();
-    const idleThresholdSec = this.config.idleThresholdMinutes * 60;
+    // 1. Query Native Windows Bridge
+    const snapshot = nativeBridge.getSnapshot();
 
-    const isSystemIdle = sysIdleSec >= idleThresholdSec;
+    if (snapshot.status === 'ERROR') {
+      this.telemetryError = snapshot.errorMessage || 'Native telemetry error';
+      this.notifyStateChange();
+      return;
+    }
+
+    this.telemetryError = undefined;
+
+    // 2. Check System Idle State
+    const idleThresholdSec = (this.config.idleThresholdMinutes || 5) * 60;
+    const isSystemIdle = snapshot.idleSeconds >= idleThresholdSec;
 
     if (isSystemIdle) {
       if (this.currentStatus !== ActivityState.IDLE) {
-        this.flushCurrentAppEvent();
+        // Transition from ACTIVE to IDLE: close active app interval
+        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
         this.currentStatus = ActivityState.IDLE;
         this.notifyStateChange();
       }
-      this.idleSeconds += 2;
+      this.idleSeconds += 1;
     } else {
       if (this.currentStatus === ActivityState.IDLE) {
+        // Transition from IDLE back to ACTIVE: record idle interval
+        this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
         this.currentStatus = ActivityState.ACTIVE;
         this.currentAppStartTime = new Date();
+        this.currentAppStartMono = process.hrtime.bigint();
         this.notifyStateChange();
       }
-      this.activeSeconds += 2;
+      this.activeSeconds += 1;
 
-      // 2. Check Foreground Window
-      const winInfo = await this.windowTracker.getActiveWindow();
-      if (winInfo.applicationName !== this.currentApp) {
-        // App switch detected! Flush previous app event
-        this.flushCurrentAppEvent();
-        this.currentApp = winInfo.applicationName;
-        this.currentProcess = winInfo.processName;
+      // 3. Resolve Foreground Application
+      const resolved = resolveApplication(snapshot.executable);
+      if (resolved.applicationName !== this.currentApp && resolved.isRecognized) {
+        // Window switch detected: close previous app interval and open new one
+        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+        this.currentApp = resolved.applicationName;
+        this.currentProcess = resolved.processName;
+        this.currentCategory = resolved.category;
         this.currentAppStartTime = new Date();
+        this.currentAppStartMono = process.hrtime.bigint();
         this.notifyStateChange();
       }
     }
@@ -350,6 +385,7 @@ export class AgentService {
     if (!this.token || !this.isWorking) return;
 
     try {
+      const snap = nativeBridge.getSnapshot();
       await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
         {
@@ -358,15 +394,21 @@ export class AgentService {
           timestamp: new Date().toISOString(),
           status: this.currentStatus,
           currentApplication: this.currentApp,
-          idleSeconds: await this.idleTracker.getSystemIdleSeconds(),
+          idleSeconds: snap.idleSeconds,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
       );
 
       this.isOnline = true;
-    } catch (err) {
+      this.lastHeartbeatTime = new Date().toLocaleTimeString();
+    } catch (err: any) {
       this.isOnline = false;
+      if (err.response?.status === 403) {
+        console.error('[AgentService] Device has been revoked by admin');
+        this.telemetryError = 'Device revoked by administrator.';
+        this.stopLoops();
+      }
     }
     this.notifyStateChange();
   }
@@ -374,8 +416,19 @@ export class AgentService {
   private async syncQueuedEvents(): Promise<void> {
     if (!this.token || this.offlineQueue.size() === 0 || !this.currentSessionId) return;
 
-    const batch = this.offlineQueue.peek(50);
+    const batch = this.offlineQueue.getPendingBatch(50);
     if (batch.length === 0) return;
+
+    const eventsPayload = batch.map((item) => ({
+      eventId: item.eventId,
+      type: item.type,
+      applicationName: item.payload.applicationName,
+      processName: item.payload.processName,
+      windowTitleSanitized: item.payload.windowTitleSanitized,
+      startedAt: item.payload.startedAt,
+      endedAt: item.payload.endedAt,
+      durationSeconds: item.payload.durationSeconds
+    }));
 
     try {
       const res = await axios.post(
@@ -383,19 +436,68 @@ export class AgentService {
         {
           deviceId: this.deviceIdentifier,
           sessionId: this.currentSessionId,
-          events: batch
+          events: eventsPayload
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 10000 }
       );
 
-      if (res.status === 200) {
-        const syncedIds = batch.map((b) => b.eventId);
-        this.offlineQueue.removeEvents(syncedIds);
+      if (res.status === 200 && res.data?.data) {
+        const accepted = res.data.data.accepted || [];
+        const duplicates = res.data.data.duplicates || [];
+        const confirmedIds = [...accepted, ...duplicates];
+
+        this.offlineQueue.markSynced(confirmedIds);
+
+        // If any failed, mark for exponential backoff
+        const failed = res.data.data.failed || [];
+        if (failed.length > 0) {
+          const failedIds = failed.map((f: any) => f.eventId);
+          this.offlineQueue.markFailed(failedIds);
+        }
+
         this.isOnline = true;
+        this.lastSyncTime = new Date().toLocaleTimeString();
         this.notifyStateChange();
       }
-    } catch (err) {
+    } catch (err: any) {
       this.isOnline = false;
+      const allBatchIds = batch.map((b) => b.eventId);
+      this.offlineQueue.markFailed(allBatchIds, err.message);
+      this.notifyStateChange();
+    }
+  }
+
+  // Handlers for PowerMonitor (suspend, resume, lock, unlock)
+  public handleSystemSleep(): void {
+    console.log('[AgentService] System sleep detected. Flushing active intervals.');
+    this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+    this.currentStatus = ActivityState.IDLE;
+    this.notifyStateChange();
+  }
+
+  public handleSystemResume(): void {
+    console.log('[AgentService] System resume detected.');
+    if (this.isWorking && !this.isOnBreak) {
+      this.currentStatus = ActivityState.ACTIVE;
+      this.currentAppStartTime = new Date();
+      this.currentAppStartMono = process.hrtime.bigint();
+      this.notifyStateChange();
+    }
+  }
+
+  public handleScreenLock(): void {
+    console.log('[AgentService] Workstation locked.');
+    this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+    this.currentStatus = ActivityState.IDLE;
+    this.notifyStateChange();
+  }
+
+  public handleScreenUnlock(): void {
+    console.log('[AgentService] Workstation unlocked.');
+    if (this.isWorking && !this.isOnBreak) {
+      this.currentStatus = ActivityState.ACTIVE;
+      this.currentAppStartTime = new Date();
+      this.currentAppStartMono = process.hrtime.bigint();
       this.notifyStateChange();
     }
   }
