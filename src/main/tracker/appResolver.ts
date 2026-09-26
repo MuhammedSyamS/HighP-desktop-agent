@@ -20,6 +20,7 @@ const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
   'git-bash.exe': { name: 'Git Bash', category: 'Development' },
   'githubdesktop.exe': { name: 'GitHub Desktop', category: 'Development' },
   'cursor.exe': { name: 'Cursor IDE', category: 'Development' },
+  'antigravity ide.exe': { name: 'Antigravity IDE', category: 'Development' },
   'antigravity.exe': { name: 'Antigravity IDE', category: 'Development' },
 
   // Browsers
@@ -79,6 +80,15 @@ export const resolveApplication = (executable: string): ResolvedApp => {
       applicationName: entry.name,
       processName: normalizedKey,
       category: entry.category,
+      isRecognized: true
+    };
+  }
+
+  if (normalizedKey.includes('antigravity')) {
+    return {
+      applicationName: 'Antigravity IDE',
+      processName: normalizedKey,
+      category: 'Development',
       isRecognized: true
     };
   }
