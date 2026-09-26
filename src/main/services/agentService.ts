@@ -282,7 +282,12 @@ export class AgentService {
     const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
     const durationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
 
-    if (durationSeconds >= 1 && this.currentApp && this.currentApp !== 'Unknown Application') {
+    const isSelfApp =
+      this.currentApp.toLowerCase().includes('highp') ||
+      this.currentApp.toLowerCase().includes('electron') ||
+      this.currentApp === 'Unknown Application';
+
+    if (durationSeconds >= 1 && this.currentApp && !isSelfApp) {
       this.offlineQueue.enqueue(uuidv4(), type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
@@ -367,16 +372,25 @@ export class AgentService {
       this.activeSeconds += 1;
 
       // 3. Resolve Foreground Application
-      const resolved = resolveApplication(snapshot.executable);
-      if (resolved.applicationName !== this.currentApp && resolved.isRecognized) {
-        // Window switch detected: close previous app interval and open new one
-        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-        this.currentApp = resolved.applicationName;
-        this.currentProcess = resolved.processName;
-        this.currentCategory = resolved.category;
-        this.currentAppStartTime = new Date();
-        this.currentAppStartMono = process.hrtime.bigint();
-        this.notifyStateChange();
+      const exeLower = (snapshot.executable || '').toLowerCase();
+      const isAgentSelf =
+        snapshot.processId === process.pid ||
+        exeLower.includes('highp') ||
+        exeLower === 'electron.exe' ||
+        exeLower.includes('telemetry');
+
+      if (!isAgentSelf) {
+        const resolved = resolveApplication(snapshot.executable);
+        if (resolved.applicationName !== this.currentApp && resolved.isRecognized) {
+          // Window switch detected: close previous app interval and open new one
+          this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+          this.currentApp = resolved.applicationName;
+          this.currentProcess = resolved.processName;
+          this.currentCategory = resolved.category;
+          this.currentAppStartTime = new Date();
+          this.currentAppStartMono = process.hrtime.bigint();
+          this.notifyStateChange();
+        }
       }
     }
   }
@@ -386,6 +400,14 @@ export class AgentService {
 
     try {
       const snap = nativeBridge.getSnapshot();
+      const cleanApp =
+        this.currentApp &&
+        !this.currentApp.toLowerCase().includes('highp') &&
+        !this.currentApp.toLowerCase().includes('electron') &&
+        this.currentApp !== 'Unknown Application'
+          ? this.currentApp
+          : undefined;
+
       await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
         {
@@ -393,7 +415,7 @@ export class AgentService {
           sessionId: this.currentSessionId,
           timestamp: new Date().toISOString(),
           status: this.currentStatus,
-          currentApplication: this.currentApp,
+          currentApplication: cleanApp,
           idleSeconds: snap.idleSeconds,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },

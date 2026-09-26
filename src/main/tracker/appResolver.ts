@@ -19,6 +19,8 @@ const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
   'windowsterminal.exe': { name: 'Windows Terminal', category: 'Development' },
   'git-bash.exe': { name: 'Git Bash', category: 'Development' },
   'githubdesktop.exe': { name: 'GitHub Desktop', category: 'Development' },
+  'cursor.exe': { name: 'Cursor IDE', category: 'Development' },
+  'antigravity.exe': { name: 'Antigravity IDE', category: 'Development' },
 
   // Browsers
   'chrome.exe': { name: 'Google Chrome', category: 'Productivity' },
@@ -56,6 +58,20 @@ const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
 export const resolveApplication = (executable: string): ResolvedApp => {
   const raw = (executable || '').trim();
   const normalizedKey = raw.toLowerCase().endsWith('.exe') ? raw.toLowerCase() : `${raw.toLowerCase()}.exe`;
+
+  // Internal agent processes should never be tracked as user work applications
+  if (
+    normalizedKey.includes('highp') ||
+    normalizedKey === 'electron.exe' ||
+    normalizedKey.includes('telemetry')
+  ) {
+    return {
+      applicationName: 'HighP Agent',
+      processName: normalizedKey,
+      category: 'System',
+      isRecognized: false
+    };
+  }
 
   if (KNOWN_EXECUTABLES[normalizedKey]) {
     const entry = KNOWN_EXECUTABLES[normalizedKey];
