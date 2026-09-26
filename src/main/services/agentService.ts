@@ -37,7 +37,7 @@ export class AgentService {
   private offlineQueue = new OfflineQueue();
 
   private config: AgentConfig = {
-    apiUrl: process.env.HIGHP_API_URL || 'http://localhost:5000',
+    apiUrl: process.env.HIGHP_API_URL || 'https://highpbackend.vercel.app',
     idleThresholdMinutes: 5,
     heartbeatIntervalSeconds: 15
   };
@@ -390,6 +390,12 @@ export class AgentService {
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.notifyStateChange();
+        } else if (resolved.applicationName === this.currentApp && resolved.isRecognized) {
+          // Ongoing active application: flush every 15s so live telemetry streams to the server continuously!
+          const elapsedSec = Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9;
+          if (elapsedSec >= 15) {
+            this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+          }
         }
       }
     }
