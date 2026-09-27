@@ -390,11 +390,17 @@ export class AgentService {
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.notifyStateChange();
+
+          // Instantly send heartbeat and sync queued events so dashboard updates in real time
+          this.sendHeartbeat().catch(() => {});
+          this.syncQueuedEvents().catch(() => {});
         } else if (resolved.applicationName === this.currentApp && resolved.isRecognized) {
-          // Ongoing active application: flush every 15s so live telemetry streams to the server continuously!
+          // Ongoing active application: flush every 5s so live telemetry streams to the server continuously
           const elapsedSec = Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9;
-          if (elapsedSec >= 15) {
+          if (elapsedSec >= 5) {
             this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+            this.sendHeartbeat().catch(() => {});
+            this.syncQueuedEvents().catch(() => {});
           }
         }
       }

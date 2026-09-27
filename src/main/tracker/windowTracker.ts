@@ -14,7 +14,7 @@ export class WindowTracker {
     return {
       applicationName: resolved.applicationName,
       processName: raw.executable || 'unknown.exe',
-      windowTitleSanitized: resolved.applicationName
+      windowTitleSanitized: raw.windowTitle || resolved.applicationName
     };
   }
 }

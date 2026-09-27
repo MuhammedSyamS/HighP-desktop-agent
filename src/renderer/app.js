@@ -159,7 +159,12 @@ loginForm.addEventListener('submit', async (e) => {
 
   try {
     const success = await window.agentApi.login(apiUrl, email, pass);
-    if (!success) {
+    if (success) {
+      localStorage.setItem('agent_api_url', apiUrl);
+      localStorage.setItem('agent_email', email);
+      localStorage.setItem('agent_pass', pass);
+      await window.agentApi.startWork();
+    } else {
       loginError.textContent = 'Invalid credentials or login failed.';
     }
   } catch (err) {
@@ -199,3 +204,28 @@ if (window.agentApi && window.agentApi.onStateUpdate) {
     updateUI(state);
   });
 }
+
+// Auto-start work on application launch
+window.addEventListener('DOMContentLoaded', async () => {
+  const defaultUrl = localStorage.getItem('agent_api_url') || 'http://localhost:5000';
+  const defaultEmail = localStorage.getItem('agent_email') || 'shamsaifudheen@gmail.com';
+  const defaultPass = localStorage.getItem('agent_pass') || 'Password@123';
+
+  const apiInput = document.getElementById('apiUrl');
+  const emailInput = document.getElementById('email');
+  const passInput = document.getElementById('password');
+
+  if (apiInput) apiInput.value = defaultUrl;
+  if (emailInput) emailInput.value = defaultEmail;
+  if (passInput) passInput.value = defaultPass;
+
+  try {
+    const success = await window.agentApi.login(defaultUrl, defaultEmail, defaultPass);
+    if (success) {
+      await window.agentApi.startWork();
+      console.log('[DesktopAgent] Auto-started work successfully for', defaultEmail);
+    }
+  } catch (err) {
+    console.warn('[DesktopAgent] Auto-start bypassed:', err.message);
+  }
+});

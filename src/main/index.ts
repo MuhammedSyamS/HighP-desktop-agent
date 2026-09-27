@@ -3,6 +3,16 @@ import path from 'path';
 import { AgentService } from './services/agentService';
 import { ActivityState } from '../shared/enums';
 
+// Ensure isolated cache and prevent file lock conflicts
+try {
+  app.setPath('userData', path.join(app.getPath('appData'), 'HighPDesktopAgentApp'));
+} catch {}
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 const agentService = new AgentService();

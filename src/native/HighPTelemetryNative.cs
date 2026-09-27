@@ -10,6 +10,15 @@ public struct LASTINPUTINFO {
 }
 
 public class Program {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr OpenInputDesktop(uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetThreadDesktop(IntPtr hDesktop);
+
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
@@ -18,6 +27,9 @@ public class Program {
 
     [DllImport("user32.dll")]
     public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
     [DllImport("kernel32.dll")]
     public static extern ulong GetTickCount64();
@@ -33,11 +45,29 @@ public class Program {
     public static extern bool CloseHandle(IntPtr hObject);
 
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const uint DESKTOP_ALL = 0x10000000 | 0x01FF;
+
+    static IntPtr _desktopHandle = IntPtr.Zero;
+
+    static void EnsureDesktopAttached() {
+        if (_desktopHandle != IntPtr.Zero) return;
+        try {
+            _desktopHandle = OpenInputDesktop(0, false, DESKTOP_ALL);
+            if (_desktopHandle == IntPtr.Zero) {
+                _desktopHandle = OpenDesktop("default", 0, false, DESKTOP_ALL);
+            }
+            if (_desktopHandle != IntPtr.Zero) {
+                SetThreadDesktop(_desktopHandle);
+            }
+        } catch {}
+    }
 
     static string GetTelemetryJson() {
+        EnsureDesktopAttached();
         IntPtr hwnd = GetForegroundWindow();
         uint pid = 0;
         string procName = "Unknown";
+        string windowTitle = "";
 
         if (hwnd != IntPtr.Zero) {
             GetWindowThreadProcessId(hwnd, out pid);
@@ -61,6 +91,9 @@ public class Program {
                     }
                 }
             }
+            StringBuilder titleSb = new StringBuilder(512);
+            GetWindowText(hwnd, titleSb, 512);
+            windowTitle = titleSb.ToString();
         }
 
         LASTINPUTINFO lii = new LASTINPUTINFO();
@@ -74,15 +107,17 @@ public class Program {
         }
 
         return string.Format(
-            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"idleSeconds\":{3}}}",
+            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"windowTitle\":\"{3}\",\"idleSeconds\":{4}}}",
             hwnd.ToInt64(),
             pid,
             procName.Replace("\\", "\\\\").Replace("\"", "\\\""),
+            windowTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " "),
             idleSeconds
         );
     }
 
     public static void Main(string[] args) {
+        EnsureDesktopAttached();
         bool streamMode = args.Length > 0 && args[0] == "--stream";
         if (streamMode) {
             Console.WriteLine("{\"status\":\"READY\"}");
