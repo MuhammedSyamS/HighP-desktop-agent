@@ -91,10 +91,17 @@ export class OfflineQueue {
   }
 
   private saveToDisk(): void {
+    const tempPath = `${this.filePath}.tmp.${Date.now()}`;
     try {
-      fs.writeFileSync(this.filePath, JSON.stringify(this.items, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, JSON.stringify(this.items, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.filePath);
     } catch (err) {
       console.error('[OfflineQueue] Error saving queue to disk:', err);
+      try {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch {}
     }
   }
 

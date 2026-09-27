@@ -153,7 +153,7 @@ function updateUI(state) {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
-  const apiUrl = (document.getElementById('apiUrl').value || '').trim() || 'https://highpbackend.vercel.app';
+  const apiUrl = (document.getElementById('apiUrl').value || '').trim() || 'https://highp-agent-backend.onrender.com';
   const email = document.getElementById('email').value;
   const pass = document.getElementById('password').value;
 
@@ -207,7 +207,7 @@ if (window.agentApi && window.agentApi.onStateUpdate) {
 
 // Auto-start work on application launch
 window.addEventListener('DOMContentLoaded', async () => {
-  const defaultUrl = localStorage.getItem('agent_api_url') || 'http://localhost:5000';
+  const defaultUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
   const defaultEmail = localStorage.getItem('agent_email') || 'shamsaifudheen@gmail.com';
   const defaultPass = localStorage.getItem('agent_pass') || 'Password@123';
 

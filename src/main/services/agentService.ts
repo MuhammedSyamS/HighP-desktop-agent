@@ -37,7 +37,7 @@ export class AgentService {
   private offlineQueue = new OfflineQueue();
 
   private config: AgentConfig = {
-    apiUrl: process.env.HIGHP_API_URL || 'https://highpbackend.vercel.app',
+    apiUrl: process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com',
     idleThresholdMinutes: 5,
     heartbeatIntervalSeconds: 15
   };
@@ -115,7 +115,7 @@ export class AgentService {
   }
 
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
-    this.config.apiUrl = (apiUrl || process.env.HIGHP_API_URL || 'https://highpbackend.vercel.app').replace(/\/$/, '');
+    this.config.apiUrl = (apiUrl || process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com').replace(/\/$/, '');
     try {
       const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password });
       if (res.data && res.data.data) {
