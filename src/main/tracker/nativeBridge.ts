@@ -180,6 +180,7 @@ export class NativeBridge {
             hwnd: String(data.hwnd || '0'),
             processId: Number(data.processId) || 0,
             executable: data.executable || 'Unknown',
+            windowTitle: data.windowTitle || '',
             idleSeconds: Math.max(0, Number(data.idleSeconds) || 0)
           });
         } catch (e: any) {

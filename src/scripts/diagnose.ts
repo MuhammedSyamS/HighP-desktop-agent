@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import axios from 'axios';
 import os from 'os';
 import { NativeBridge } from '../main/tracker/nativeBridge';
@@ -43,7 +44,7 @@ async function runDiagnostics() {
   }
 
   console.log('\n--- Checking API & Backend Connectivity ---');
-  const apiUrl = process.env.HIGHP_API_URL || 'http://localhost:5000';
+  const apiUrl = process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com';
   console.log(`Target API URL:      ${apiUrl}`);
 
   try {

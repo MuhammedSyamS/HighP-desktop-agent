@@ -174,6 +174,8 @@ loginForm.addEventListener('submit', async (e) => {
 
 logoutBtn.addEventListener('click', async () => {
   await window.agentApi.logout();
+  localStorage.removeItem('agent_email');
+  localStorage.removeItem('agent_pass');
 });
 
 startWorkBtn.addEventListener('click', async () => {

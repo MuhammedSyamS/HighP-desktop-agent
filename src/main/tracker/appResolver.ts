@@ -56,7 +56,7 @@ const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
   'spotify.exe': { name: 'Spotify', category: 'Media' }
 };
 
-export const resolveApplication = (executable: string): ResolvedApp => {
+export const resolveApplication = (executable: string, windowTitle?: string): ResolvedApp => {
   const raw = (executable || '').trim();
   const normalizedKey = raw.toLowerCase().endsWith('.exe') ? raw.toLowerCase() : `${raw.toLowerCase()}.exe`;
 
@@ -72,6 +72,19 @@ export const resolveApplication = (executable: string): ResolvedApp => {
       category: 'System',
       isRecognized: false
     };
+  }
+
+  // Windows UWP / modern app wrapper
+  if (normalizedKey === 'applicationframehost.exe' && windowTitle) {
+    const cleanTitle = windowTitle.trim();
+    if (cleanTitle && cleanTitle.toLowerCase() !== 'applicationframehost') {
+      return {
+        applicationName: cleanTitle,
+        processName: 'ApplicationFrameHost.exe',
+        category: 'Productivity',
+        isRecognized: true
+      };
+    }
   }
 
   if (KNOWN_EXECUTABLES[normalizedKey]) {

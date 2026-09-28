@@ -58,11 +58,13 @@ export class OfflineQueue {
         if (Array.isArray(parsed)) {
           // Reset any in-flight 'SYNCING' items from a previous process crash back to 'PENDING'
           this.items = parsed.map((item) => {
-            if (item.status === 'SYNCING') {
-              return { ...item, status: 'PENDING' };
+            const cleanItem = { ...item };
+            if (cleanItem.status === 'SYNCING') {
+              cleanItem.status = 'PENDING';
             }
+            cleanItem.nextRetryAt = undefined;
             // Migrate legacy format if needed
-            if (!item.payload && item.applicationName) {
+            if (!cleanItem.payload && cleanItem.applicationName) {
               return {
                 id: item.eventId,
                 eventId: item.eventId,

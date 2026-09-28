@@ -56,6 +56,7 @@ export class AgentService {
   private currentApp: string = 'Unknown Application';
   private currentProcess: string = 'unknown.exe';
   private currentCategory: string = 'Other';
+  private currentWindowTitle: string = '';
   private currentAppStartTime: Date = new Date();
   private currentAppStartMono: bigint = process.hrtime.bigint();
 
@@ -114,8 +115,13 @@ export class AgentService {
     }
   }
 
+  private normalizeApiUrl(url?: string): string {
+    const raw = (url || process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com').trim();
+    return raw.replace(/\/+$/, '').replace(/\/api$/, '');
+  }
+
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
-    this.config.apiUrl = (apiUrl || process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com').replace(/\/$/, '');
+    this.config.apiUrl = this.normalizeApiUrl(apiUrl);
     try {
       const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password });
       if (res.data && res.data.data) {
@@ -291,7 +297,7 @@ export class AgentService {
       this.offlineQueue.enqueue(uuidv4(), type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
-        windowTitleSanitized: this.currentApp,
+        windowTitleSanitized: this.currentWindowTitle || this.currentApp,
         startedAt: this.currentAppStartTime.toISOString(),
         endedAt: now.toISOString(),
         durationSeconds
@@ -380,13 +386,14 @@ export class AgentService {
         exeLower.includes('telemetry');
 
       if (!isAgentSelf) {
-        const resolved = resolveApplication(snapshot.executable);
+        const resolved = resolveApplication(snapshot.executable, snapshot.windowTitle);
         if (resolved.applicationName !== this.currentApp && resolved.isRecognized) {
           // Window switch detected: close previous app interval and open new one
           this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
           this.currentApp = resolved.applicationName;
           this.currentProcess = resolved.processName;
           this.currentCategory = resolved.category;
+          this.currentWindowTitle = snapshot.windowTitle || resolved.applicationName;
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.notifyStateChange();
@@ -395,6 +402,7 @@ export class AgentService {
           this.sendHeartbeat().catch(() => {});
           this.syncQueuedEvents().catch(() => {});
         } else if (resolved.applicationName === this.currentApp && resolved.isRecognized) {
+          this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
           // Ongoing active application: flush every 5s so live telemetry streams to the server continuously
           const elapsedSec = Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9;
           if (elapsedSec >= 5) {
