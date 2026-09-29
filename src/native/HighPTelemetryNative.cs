@@ -10,6 +10,8 @@ public struct LASTINPUTINFO {
 }
 
 public class Program {
+    public delegate bool EnumWindowProc(IntPtr hWnd, IntPtr lParam);
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr OpenInputDesktop(uint dwFlags, bool fInherit, uint dwDesiredAccess);
 
@@ -24,6 +26,10 @@ public class Program {
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumChildWindows(IntPtr window, EnumWindowProc callback, IntPtr lParam);
 
     [DllImport("user32.dll")]
     public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
@@ -62,6 +68,29 @@ public class Program {
         } catch {}
     }
 
+    static string GetProcessExeByPid(uint pid) {
+        if (pid == 0) return "Unknown";
+        try {
+            using (Process p = Process.GetProcessById((int)pid)) {
+                return p.ProcessName + ".exe";
+            }
+        } catch {
+            IntPtr hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (hProc != IntPtr.Zero) {
+                try {
+                    StringBuilder sb = new StringBuilder(1024);
+                    uint size = (uint)sb.Capacity;
+                    if (QueryFullProcessImageName(hProc, 0, sb, ref size)) {
+                        return Path.GetFileName(sb.ToString());
+                    }
+                } finally {
+                    CloseHandle(hProc);
+                }
+            }
+        }
+        return "Unknown";
+    }
+
     static string GetTelemetryJson() {
         EnsureDesktopAttached();
         IntPtr hwnd = GetForegroundWindow();
@@ -72,21 +101,27 @@ public class Program {
         if (hwnd != IntPtr.Zero) {
             GetWindowThreadProcessId(hwnd, out pid);
             if (pid > 0) {
-                try {
-                    using (Process p = Process.GetProcessById((int)pid)) {
-                        procName = p.ProcessName + ".exe";
-                    }
-                } catch {
-                    IntPtr hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-                    if (hProc != IntPtr.Zero) {
-                        try {
-                            StringBuilder sb = new StringBuilder(1024);
-                            uint size = (uint)sb.Capacity;
-                            if (QueryFullProcessImageName(hProc, 0, sb, ref size)) {
-                                procName = Path.GetFileName(sb.ToString());
-                            }
-                        } finally {
-                            CloseHandle(hProc);
+                procName = GetProcessExeByPid(pid);
+
+                // If the top-level window is ApplicationFrameHost (UWP wrapper), drill down to the hosted app window
+                if (procName.Equals("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) {
+                    uint hostPid = pid;
+                    uint realPid = 0;
+                    EnumChildWindows(hwnd, (childHwnd, lParam) => {
+                        uint cPid;
+                        GetWindowThreadProcessId(childHwnd, out cPid);
+                        if (cPid > 0 && cPid != hostPid) {
+                            realPid = cPid;
+                            return false; // Stop enumeration
+                        }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    if (realPid > 0) {
+                        string childExe = GetProcessExeByPid(realPid);
+                        if (!childExe.Equals("Unknown", StringComparison.OrdinalIgnoreCase)) {
+                            pid = realPid;
+                            procName = childExe;
                         }
                     }
                 }

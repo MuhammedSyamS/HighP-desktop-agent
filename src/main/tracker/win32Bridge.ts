@@ -23,7 +23,7 @@ class Win32Bridge {
     const raw = nativeBridge.getSnapshot();
     return {
       processName: raw.executable ? raw.executable.replace(/\.exe$/i, '') : 'Unknown',
-      windowTitle: raw.status || '',
+      windowTitle: raw.windowTitle || '',
       idleSeconds: raw.idleSeconds || 0
     };
   }

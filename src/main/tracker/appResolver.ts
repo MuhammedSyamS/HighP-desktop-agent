@@ -53,7 +53,9 @@ const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
   'notepad.exe': { name: 'Notepad', category: 'Productivity' },
   'notepad++.exe': { name: 'Notepad++', category: 'Productivity' },
   'explorer.exe': { name: 'File Explorer', category: 'Productivity' },
-  'spotify.exe': { name: 'Spotify', category: 'Media' }
+  'spotify.exe': { name: 'Spotify', category: 'Media' },
+  'spotifylauncher.exe': { name: 'Spotify', category: 'Media' },
+  'spotify_cli.exe': { name: 'Spotify', category: 'Media' }
 };
 
 export const resolveApplication = (executable: string, windowTitle?: string): ResolvedApp => {
@@ -93,6 +95,15 @@ export const resolveApplication = (executable: string, windowTitle?: string): Re
       applicationName: entry.name,
       processName: normalizedKey,
       category: entry.category,
+      isRecognized: true
+    };
+  }
+
+  if (normalizedKey.includes('spotify')) {
+    return {
+      applicationName: 'Spotify',
+      processName: normalizedKey,
+      category: 'Media',
       isRecognized: true
     };
   }

@@ -53,6 +53,9 @@ export class AgentService {
   private currentStatus: ActivityState = ActivityState.OFFLINE;
 
   // Active tracking state
+  private previousHwnd: string = '0';
+  private previousPid: number = 0;
+  private previousExecutable: string = '';
   private currentApp: string = 'Unknown Application';
   private currentProcess: string = 'unknown.exe';
   private currentCategory: string = 'Other';
@@ -294,7 +297,9 @@ export class AgentService {
       this.currentApp === 'Unknown Application';
 
     if (durationSeconds >= 1 && this.currentApp && !isSelfApp) {
-      this.offlineQueue.enqueue(uuidv4(), type, {
+      const eventId = uuidv4();
+      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}`);
+      this.offlineQueue.enqueue(eventId, type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
         windowTitleSanitized: this.currentWindowTitle || this.currentApp,
@@ -385,31 +390,58 @@ export class AgentService {
         exeLower === 'electron.exe' ||
         exeLower.includes('telemetry');
 
-      if (!isAgentSelf) {
+      if (isAgentSelf) {
+        if (this.currentApp !== 'HighP Agent') {
+          // User switched to HighP Agent: close previous application interval
+          this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+          this.previousHwnd = snapshot.hwnd;
+          this.previousPid = snapshot.processId;
+          this.previousExecutable = snapshot.executable || '';
+          this.currentApp = 'HighP Agent';
+          this.currentProcess = snapshot.executable || 'HighPAgent.exe';
+          this.currentCategory = 'System';
+          this.currentWindowTitle = snapshot.windowTitle || 'HighP Agent';
+          this.currentAppStartTime = new Date();
+          this.currentAppStartMono = process.hrtime.bigint();
+          this.notifyStateChange();
+          this.sendHeartbeat().catch(() => {});
+        }
+      } else {
         const resolved = resolveApplication(snapshot.executable, snapshot.windowTitle);
-        if (resolved.applicationName !== this.currentApp && resolved.isRecognized) {
+        const hasIdentityChanged =
+          resolved.applicationName !== this.currentApp ||
+          (snapshot.processId > 0 && snapshot.processId !== this.previousPid) ||
+          (snapshot.hwnd && snapshot.hwnd !== '0' && snapshot.hwnd !== this.previousHwnd);
+
+        if (hasIdentityChanged) {
+          const prevApp = this.currentApp;
           // Window switch detected: close previous app interval and open new one
           this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-          this.currentApp = resolved.applicationName;
+
+          this.previousHwnd = snapshot.hwnd;
+          this.previousPid = snapshot.processId;
+          this.previousExecutable = snapshot.executable || '';
+          // Authoritative application identity: never fall back to previous application
+          this.currentApp = resolved.applicationName || 'Unknown Application';
           this.currentProcess = resolved.processName;
           this.currentCategory = resolved.category;
           this.currentWindowTitle = snapshot.windowTitle || resolved.applicationName;
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
+
+          console.log(`[WINDOW]\nHWND=${snapshot.hwnd}\nPID=${snapshot.processId}\nEXE=${snapshot.executable}`);
+          console.log(`[APP]\nresolvedApplication=${resolved.applicationName}`);
+          console.log(`[STATE]\npreviousApplication=${prevApp}\ncurrentApplication=${this.currentApp}`);
+          console.log(`[TIME]\nstartedAt=${this.currentAppStartTime.toISOString()}\nlastSeenAt=${new Date().toISOString()}`);
+
           this.notifyStateChange();
 
-          // Instantly send heartbeat and sync queued events so dashboard updates in real time
+          // Instantly send live heartbeat and sync queued events so dashboard updates in real time
           this.sendHeartbeat().catch(() => {});
           this.syncQueuedEvents().catch(() => {});
-        } else if (resolved.applicationName === this.currentApp && resolved.isRecognized) {
+        } else {
           this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
-          // Ongoing active application: flush every 5s so live telemetry streams to the server continuously
-          const elapsedSec = Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9;
-          if (elapsedSec >= 5) {
-            this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-            this.sendHeartbeat().catch(() => {});
-            this.syncQueuedEvents().catch(() => {});
-          }
+          this.notifyStateChange();
         }
       }
     }
@@ -423,10 +455,12 @@ export class AgentService {
       const cleanApp =
         this.currentApp &&
         !this.currentApp.toLowerCase().includes('highp') &&
-        !this.currentApp.toLowerCase().includes('electron') &&
-        this.currentApp !== 'Unknown Application'
+        !this.currentApp.toLowerCase().includes('electron')
           ? this.currentApp
-          : undefined;
+          : '';
+
+      const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
+      const activeDurSec = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
 
       await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
@@ -436,7 +470,13 @@ export class AgentService {
           timestamp: new Date().toISOString(),
           status: this.currentStatus,
           currentApplication: cleanApp,
+          executable: this.currentProcess,
+          pid: snap.processId || null,
+          hwnd: snap.hwnd && snap.hwnd !== '0' ? parseInt(snap.hwnd, 10) : null,
+          startedAt: this.currentAppStartTime.toISOString(),
+          activeDurationSeconds: activeDurSec,
           idleSeconds: snap.idleSeconds,
+          windowTitle: this.currentWindowTitle || cleanApp,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
@@ -473,6 +513,7 @@ export class AgentService {
     }));
 
     try {
+      console.log(`[SYNC]\napplication=${eventsPayload.map((e) => e.applicationName).join(', ')}`);
       const res = await axios.post(
         `${this.config.apiUrl}/api/agent/sync`,
         {
