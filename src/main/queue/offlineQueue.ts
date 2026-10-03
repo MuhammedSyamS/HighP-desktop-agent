@@ -12,6 +12,7 @@ export interface QueuedActivityPayload {
   startedAt: string;
   endedAt: string;
   durationSeconds: number;
+  domain?: string;
 }
 
 export interface QueuedActivityItem {

@@ -13,6 +13,7 @@ import {
 import { windowTracker } from '../tracker/windowTracker';
 import { OfflineQueue, QueuedActivityItem } from '../queue/offlineQueue';
 import { ActivityState, ActivityEventType, BreakReason } from '../../shared/enums';
+import { browserBridge } from '../browser/browserBridge';
 
 export interface AgentConfig {
   apiUrl: string;
@@ -53,6 +54,7 @@ export interface AgentState {
   lastHeartbeatTime?: string;
   lastSyncTime?: string;
   telemetryError?: string;
+  currentWebsite?: { domain: string } | null;
 }
 
 export class AgentService {
@@ -90,6 +92,9 @@ export class AgentService {
   private currentAppIsIgnored = false;
   private currentAppTrackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN' = 'TRACKED';
   private currentApplicationState: CurrentApplicationInfo | null = null;
+  private currentWebsiteDomain: string | null = null;
+  private currentWebsiteStartTime: Date = new Date();
+  private currentWebsiteStartMono: bigint = process.hrtime.bigint();
 
   // Application Registry
   private dynamicRegistry: TrackedApplicationEntry[] = [];
@@ -238,7 +243,8 @@ export class AgentService {
       queuedEventsCount: this.offlineQueue.size(),
       lastHeartbeatTime: this.lastHeartbeatTime,
       lastSyncTime: this.lastSyncTime,
-      telemetryError: this.telemetryError
+      telemetryError: this.telemetryError,
+      currentWebsite: this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null
     };
   }
 
@@ -273,6 +279,23 @@ export class AgentService {
 
         await this.registerDevice();
         await this.syncApplicationRegistry();
+
+        // Section 18: Resume existing work session if one is already open on backend
+        try {
+          const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
+            headers: { Authorization: `Bearer ${this.token}` }
+          });
+          if (sessRes.data?.data && sessRes.data.data.status === 'ACTIVE') {
+            this.currentSessionId = sessRes.data.data._id;
+            this.isWorking = true;
+            this.isOnBreak = false;
+            this.currentStatus = ActivityState.ACTIVE;
+            console.log(`[WORK_SESSION]\nstatus=OPEN (Resumed existing session: ${this.currentSessionId})`);
+          }
+        } catch (sessErr: any) {
+          console.warn('[AgentService] Could not check open session:', sessErr.message);
+        }
+
         this.startLoops();
         this.notifyStateChange();
         return true;
@@ -285,9 +308,8 @@ export class AgentService {
   }
 
   public async logout(): Promise<void> {
-    if (this.isWorking) {
-      await this.endWork();
-    }
+    // Note: Quitting or logging out of the desktop agent must NOT terminate an active work session.
+    // The work session remains OPEN until the employee explicitly clicks "End Work".
     this.stopLoops();
     this.token = null;
     this.user = null;
@@ -438,11 +460,12 @@ export class AgentService {
       !isSelfApp
     ) {
       const eventId = uuidv4();
-      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}\nduration=${durationSeconds}s`);
+      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}\nwebsite=${this.currentWebsiteDomain || 'None'}\nduration=${durationSeconds}s`);
       this.offlineQueue.enqueue(eventId, type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
         windowTitleSanitized: this.currentWindowTitle || this.currentApp,
+        domain: this.currentWebsiteDomain || undefined,
         startedAt: this.currentAppStartTime.toISOString(),
         endedAt: now.toISOString(),
         durationSeconds
@@ -476,6 +499,9 @@ export class AgentService {
     this.registrySyncTimer = setInterval(async () => {
       await this.syncApplicationRegistry();
     }, 60000);
+
+    // 5. Start Privacy-Safe Browser Bridge on localhost
+    browserBridge.start();
   }
 
   private stopLoops(): void {
@@ -483,6 +509,7 @@ export class AgentService {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.registrySyncTimer) clearInterval(this.registrySyncTimer);
+    browserBridge.stop();
   }
 
   private async runTrackingTick(): Promise<void> {
@@ -591,9 +618,18 @@ export class AgentService {
           this.currentAppStartMono = process.hrtime.bigint();
           this.updateAuthoritativeCurrentApp(snapshot);
 
-          // Section 10 Diagnostic Logging
-          console.log(`\n[NATIVE]\nPID=${snapshot.processId}\nEXE=${snapshot.executable}\nPATH=${snapshot.executablePath}\nHWND=${snapshot.hwnd}\nIDLE=${snapshot.idleSeconds}`);
+          // Correlate with active website if application is a browser
+          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable);
+          this.currentWebsiteDomain = activeWebsite ? activeWebsite.domain : null;
+          this.currentWebsiteStartTime = new Date();
+          this.currentWebsiteStartMono = process.hrtime.bigint();
+
+          // Section 10 & 27 Diagnostic Logging
+          console.log(`\n[WORK_SESSION]\nstatus=OPEN`);
+          console.log(`[NATIVE]\nPID=${snapshot.processId}\nEXE=${snapshot.executable}\nPATH=${snapshot.executablePath}\nHWND=${snapshot.hwnd}\nIDLE=${snapshot.idleSeconds}`);
           console.log(`[RESOLVER]\n${snapshot.executable}\n→ ${resolved.name}\n→ ${resolved.category}\n→ ${resolved.trackingState}`);
+          console.log(`[BROWSER]\nbrowser=${resolved.name}\ndomain=${this.currentWebsiteDomain || 'None'}`);
+          console.log(`[ACTIVITY]\napplication=${resolved.name}\nwebsite=${this.currentWebsiteDomain || 'None'}`);
           console.log(`[AGENT]\nPrevious=${prevApp}\nCurrent=${resolved.name}\nChanged=true`);
 
           if (resolved.trackingState === 'UNKNOWN' || resolved.isUnknown) {
@@ -616,12 +652,35 @@ export class AgentService {
           if (this.currentApplicationState) {
             this.currentApplicationState.lastSeenAt = new Date().toISOString();
           }
-          // Periodic flush check: If continuing in this tracked app for >= 30s,
-          // flush the interval checkpoint so events are continuously synced to backend!
-          const elapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
-          if (elapsedSec >= 30 && this.currentAppIsTracked && !this.currentAppIsIgnored) {
-            this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-            this.syncQueuedEvents().catch(() => {});
+
+          // Correlate with active website tab inside the same browser
+          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable);
+          const newDomain = activeWebsite ? activeWebsite.domain : null;
+
+          if (newDomain !== this.currentWebsiteDomain) {
+            // Website tab switch within the same browser application (Section 11)
+            // Application session remains unchanged; record distinct website interval
+            if (this.currentWebsiteDomain && this.currentAppIsTracked && !this.currentAppIsIgnored) {
+              this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+              this.syncQueuedEvents().catch(() => {});
+            }
+            const prevDomain = this.currentWebsiteDomain;
+            this.currentWebsiteDomain = newDomain;
+            this.currentWebsiteStartTime = new Date();
+            this.currentWebsiteStartMono = process.hrtime.bigint();
+
+            console.log(`\n[BROWSER]\nbrowser=${this.currentApp}\ndomain=${newDomain || 'None'}\nPreviousDomain=${prevDomain || 'None'}`);
+            console.log(`[ACTIVITY]\napplication=${this.currentApp}\nwebsite=${newDomain || 'None'}`);
+
+            this.sendHeartbeat().catch(() => {});
+          } else {
+            // Periodic flush check: If continuing in this tracked app for >= 30s,
+            // flush the interval checkpoint so events are continuously synced to backend!
+            const elapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
+            if (elapsedSec >= 30 && this.currentAppIsTracked && !this.currentAppIsIgnored) {
+              this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+              this.syncQueuedEvents().catch(() => {});
+            }
           }
           this.notifyStateChange();
         }
@@ -676,6 +735,7 @@ export class AgentService {
           activeDurationSeconds: focusDurSec,
           idleSeconds: snap.idleSeconds,
           windowTitle: this.currentWindowTitle || cleanApp,
+          website: this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
@@ -706,6 +766,7 @@ export class AgentService {
       applicationName: item.payload.applicationName,
       processName: item.payload.processName,
       windowTitleSanitized: item.payload.windowTitleSanitized,
+      domain: item.payload.domain,
       startedAt: item.payload.startedAt,
       endedAt: item.payload.endedAt,
       durationSeconds: item.payload.durationSeconds
