@@ -83,6 +83,7 @@ export class AgentService {
   private currentCategory: string = 'Other';
   private currentExecutablePath: string = '';
   private currentWindowTitle: string = '';
+  private currentAppFocusStartTime: Date = new Date();
   private currentAppStartTime: Date = new Date();
   private currentAppStartMono: bigint = process.hrtime.bigint();
   private currentAppIsTracked = false;
@@ -332,6 +333,7 @@ export class AgentService {
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
+      this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
       this.notifyStateChange();
@@ -341,6 +343,7 @@ export class AgentService {
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
+      this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
       this.notifyStateChange();
@@ -519,6 +522,7 @@ export class AgentService {
         // Transition from IDLE back to ACTIVE: record idle interval
         this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
         this.currentStatus = ActivityState.ACTIVE;
+        this.currentAppFocusStartTime = new Date();
         this.currentAppStartTime = new Date();
         this.currentAppStartMono = process.hrtime.bigint();
         this.notifyStateChange();
@@ -553,6 +557,7 @@ export class AgentService {
           this.currentAppTrackingState = 'IGNORED';
           this.currentWindowTitle = snapshot.windowTitle || 'HighP Agent';
           this.currentAppStartTime = new Date();
+          this.currentAppFocusStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.updateAuthoritativeCurrentApp(snapshot);
           this.notifyStateChange();
@@ -581,6 +586,7 @@ export class AgentService {
           this.currentAppIsIgnored = resolved.ignored;
           this.currentAppTrackingState = resolved.trackingState;
           this.currentWindowTitle = snapshot.windowTitle || resolved.name;
+          this.currentAppFocusStartTime = new Date();
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.updateAuthoritativeCurrentApp(snapshot);
@@ -609,6 +615,13 @@ export class AgentService {
           this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
           if (this.currentApplicationState) {
             this.currentApplicationState.lastSeenAt = new Date().toISOString();
+          }
+          // Periodic flush check: If continuing in this tracked app for >= 30s,
+          // flush the interval checkpoint so events are continuously synced to backend!
+          const elapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
+          if (elapsedSec >= 30 && this.currentAppIsTracked && !this.currentAppIsIgnored) {
+            this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+            this.syncQueuedEvents().catch(() => {});
           }
           this.notifyStateChange();
         }
@@ -644,8 +657,7 @@ export class AgentService {
           ? this.currentApp
           : '';
 
-      const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
-      const activeDurSec = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
+      const focusDurSec = Math.max(0, Math.floor((Date.now() - this.currentAppFocusStartTime.getTime()) / 1000));
 
       await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
@@ -660,8 +672,8 @@ export class AgentService {
           trackingState: this.currentAppTrackingState,
           pid: snap.processId || null,
           hwnd: snap.hwnd && snap.hwnd !== '0' ? parseInt(snap.hwnd, 10) : null,
-          startedAt: this.currentAppStartTime.toISOString(),
-          activeDurationSeconds: activeDurSec,
+          startedAt: this.currentAppFocusStartTime.toISOString(),
+          activeDurationSeconds: focusDurSec,
           idleSeconds: snap.idleSeconds,
           windowTitle: this.currentWindowTitle || cleanApp,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
