@@ -154,13 +154,14 @@ public class Program {
         }
 
         return string.Format(
-            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"executablePath\":\"{3}\",\"windowTitle\":\"{4}\",\"idleSeconds\":{5}}}",
+            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"executablePath\":\"{3}\",\"windowTitle\":\"{4}\",\"idleSeconds\":{5},\"timestamp\":\"{6}\"}}",
             hwnd.ToInt64(),
             pid,
             procName.Replace("\\", "\\\\").Replace("\"", "\\\""),
             procPath.Replace("\\", "\\\\").Replace("\"", "\\\""),
             windowTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " "),
-            idleSeconds
+            idleSeconds,
+            DateTime.UtcNow.ToString("o")
         );
     }
 

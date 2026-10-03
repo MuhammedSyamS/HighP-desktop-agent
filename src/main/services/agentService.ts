@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { nativeBridge } from '../tracker/nativeBridge';
+import { nativeBridge, NativeTelemetryResult } from '../tracker/nativeBridge';
 import {
   resolveApplication,
   TrackedApplicationEntry,
@@ -20,12 +20,26 @@ export interface AgentConfig {
   heartbeatIntervalSeconds: number;
 }
 
+export interface CurrentApplicationInfo {
+  name: string;
+  executableName: string;
+  executablePath: string;
+  category: string;
+  trackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN';
+  processId: number;
+  hwnd: string | number;
+  windowTitle?: string;
+  startedAt: string;
+  lastSeenAt: string;
+}
+
 export interface AgentState {
   isLoggedIn: boolean;
   isWorking: boolean;
   isOnBreak: boolean;
   currentStatus: ActivityState;
   currentApplication: string;
+  currentApplicationInfo?: CurrentApplicationInfo | null;
   activeSeconds: number;
   idleSeconds: number;
   breakSeconds: number;
@@ -73,6 +87,8 @@ export class AgentService {
   private currentAppStartMono: bigint = process.hrtime.bigint();
   private currentAppIsTracked = false;
   private currentAppIsIgnored = false;
+  private currentAppTrackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN' = 'TRACKED';
+  private currentApplicationState: CurrentApplicationInfo | null = null;
 
   // Application Registry
   private dynamicRegistry: TrackedApplicationEntry[] = [];
@@ -208,6 +224,7 @@ export class AgentService {
       isOnBreak: this.isOnBreak,
       currentStatus: this.currentStatus,
       currentApplication: this.currentApp,
+      currentApplicationInfo: this.currentApplicationState,
       activeSeconds: this.activeSeconds,
       idleSeconds: this.idleSeconds,
       breakSeconds: this.breakSeconds,
@@ -474,8 +491,8 @@ export class AgentService {
       return;
     }
 
-    // 1. Query Native Windows Bridge (returns hwnd, processId, executable, executablePath, idleSeconds)
-    const snapshot = nativeBridge.getSnapshot();
+    // 1. Query Native Windows Bridge (returns hwnd, processId, executable, executablePath, idleSeconds, timestamp)
+    const snapshot = await nativeBridge.getFreshSnapshot();
 
     if (snapshot.status === 'ERROR') {
       this.telemetryError = snapshot.errorMessage || 'Native telemetry error';
@@ -517,9 +534,9 @@ export class AgentService {
       );
 
       const isAgentSelf =
-        resolved.category === 'System' ||
         snapshot.processId === process.pid ||
-        (snapshot.executable || '').toLowerCase().includes('highp');
+        (snapshot.executable || '').toLowerCase().includes('highp') ||
+        (snapshot.executable || '').toLowerCase() === 'electron.exe';
 
       if (isAgentSelf) {
         if (this.currentApp !== 'HighP Agent') {
@@ -533,12 +550,15 @@ export class AgentService {
           this.currentExecutablePath = snapshot.executablePath || '';
           this.currentAppIsTracked = false;
           this.currentAppIsIgnored = true;
+          this.currentAppTrackingState = 'IGNORED';
           this.currentWindowTitle = snapshot.windowTitle || 'HighP Agent';
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
+          this.updateAuthoritativeCurrentApp(snapshot);
           this.notifyStateChange();
           this.sendHeartbeat().catch(() => {});
         }
+      } else {
         const isSameApplication =
           resolved.name === this.currentApp &&
           resolved.executableName.toLowerCase() === (this.currentProcess || '').toLowerCase() &&
@@ -559,21 +579,23 @@ export class AgentService {
           this.currentExecutablePath = snapshot.executablePath || '';
           this.currentAppIsTracked = resolved.tracked;
           this.currentAppIsIgnored = resolved.ignored;
+          this.currentAppTrackingState = resolved.trackingState;
           this.currentWindowTitle = snapshot.windowTitle || resolved.name;
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
+          this.updateAuthoritativeCurrentApp(snapshot);
 
-          // Section 28 Diagnostic Logging
-          console.log(`[Telemetry]\nPID: ${snapshot.processId}\nExecutable: ${snapshot.executable}`);
+          // Section 10 Diagnostic Logging
+          console.log(`\n[NATIVE]\nPID=${snapshot.processId}\nEXE=${snapshot.executable}\nPATH=${snapshot.executablePath}\nHWND=${snapshot.hwnd}\nIDLE=${snapshot.idleSeconds}`);
+          console.log(`[RESOLVER]\n${snapshot.executable}\n→ ${resolved.name}\n→ ${resolved.category}\n→ ${resolved.trackingState}`);
+          console.log(`[AGENT]\nPrevious=${prevApp}\nCurrent=${resolved.name}\nChanged=true`);
+
           if (resolved.trackingState === 'UNKNOWN' || resolved.isUnknown) {
-            console.log(`[Resolver]\nUnknown executable:\n${snapshot.executable}`);
             this.reportUnknownApp(snapshot.executable, snapshot.executablePath, snapshot.windowTitle);
           } else if (resolved.trackingState === 'IGNORED' || resolved.ignored) {
-            console.log(`[Resolver]\n${resolved.name}\nState: IGNORED\nActivity suppressed`);
+            console.log(`[ACTIVITY]\nApplication=${resolved.name}\nAction=SUPPRESS (Ignored)`);
           } else {
-            console.log(`[Resolver]\nApplication: ${resolved.name}\nCategory: ${resolved.category}\nState: TRACKED`);
-            console.log(`[WindowTracker]\nApplication changed:\n${prevApp} → ${resolved.name}`);
-            console.log(`[Activity]\nSession started:\n${resolved.name}`);
+            console.log(`[ACTIVITY]\nApplication=${resolved.name}\nAction=START`);
           }
 
           this.notifyStateChange();
@@ -585,10 +607,28 @@ export class AgentService {
           }
         } else {
           this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
+          if (this.currentApplicationState) {
+            this.currentApplicationState.lastSeenAt = new Date().toISOString();
+          }
           this.notifyStateChange();
         }
       }
     }
+  }
+
+  private updateAuthoritativeCurrentApp(snapshot: NativeTelemetryResult): void {
+    this.currentApplicationState = {
+      name: this.currentApp,
+      executableName: this.currentProcess,
+      executablePath: this.currentExecutablePath,
+      category: this.currentCategory,
+      trackingState: this.currentAppTrackingState,
+      processId: snapshot.processId || 0,
+      hwnd: snapshot.hwnd || '0',
+      windowTitle: this.currentWindowTitle,
+      startedAt: this.currentAppStartTime.toISOString(),
+      lastSeenAt: new Date().toISOString()
+    };
   }
 
   private async sendHeartbeat(): Promise<void> {
@@ -596,10 +636,8 @@ export class AgentService {
 
     try {
       const snap = nativeBridge.getSnapshot();
-      // Only report as tracked currentApplication if tracking is enabled in Application Registry
+      // Transmit the real detected application (Spotify, Chrome, VS Code, etc.)
       const cleanApp =
-        this.currentAppIsTracked &&
-        !this.currentAppIsIgnored &&
         this.currentApp &&
         !this.currentApp.toLowerCase().includes('highp') &&
         !this.currentApp.toLowerCase().includes('electron')
@@ -618,6 +656,8 @@ export class AgentService {
           status: this.currentStatus,
           currentApplication: cleanApp,
           executable: this.currentProcess,
+          category: this.currentCategory,
+          trackingState: this.currentAppTrackingState,
           pid: snap.processId || null,
           hwnd: snap.hwnd && snap.hwnd !== '0' ? parseInt(snap.hwnd, 10) : null,
           startedAt: this.currentAppStartTime.toISOString(),

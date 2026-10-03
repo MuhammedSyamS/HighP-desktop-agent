@@ -12,6 +12,7 @@ export interface NativeTelemetryResult {
   executablePath?: string;
   windowTitle?: string;
   idleSeconds: number;
+  timestamp?: string;
   errorMessage?: string;
 }
 
@@ -20,6 +21,9 @@ export class NativeBridge {
   private child: ChildProcessWithoutNullStreams | null = null;
   private rl: readline.Interface | null = null;
   private isReady = false;
+  private lastSuccessTimestamp = 0;
+  private pendingResolvers: Array<(res: NativeTelemetryResult) => void> = [];
+
   private latestResult: NativeTelemetryResult = {
     status: 'OK',
     hwnd: '0',
@@ -27,8 +31,10 @@ export class NativeBridge {
     executable: 'Unknown',
     executablePath: '',
     windowTitle: '',
-    idleSeconds: 0
+    idleSeconds: 0,
+    timestamp: new Date().toISOString()
   };
+
   private pollInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -74,6 +80,8 @@ export class NativeBridge {
       return;
     }
 
+    this.stop();
+
     try {
       this.child = spawn(this.exePath, ['--stream'], {
         windowsHide: true,
@@ -91,17 +99,28 @@ export class NativeBridge {
               this.isReady = true;
               this.queryOnce();
             } else if (data.status === 'OK') {
-              this.latestResult = {
+              const res: NativeTelemetryResult = {
                 status: 'OK',
                 hwnd: String(data.hwnd || '0'),
                 processId: Number(data.processId) || 0,
                 executable: data.executable || 'Unknown',
                 executablePath: data.executablePath || '',
                 windowTitle: data.windowTitle || '',
-                idleSeconds: Math.max(0, Number(data.idleSeconds) || 0)
+                idleSeconds: Math.max(0, Number(data.idleSeconds) || 0),
+                timestamp: data.timestamp || new Date().toISOString()
               };
+
+              this.lastSuccessTimestamp = Date.now();
+              this.latestResult = res;
+
+              // Notify any pending getFreshSnapshot promises
+              const resolvers = [...this.pendingResolvers];
+              this.pendingResolvers = [];
+              for (const r of resolvers) {
+                r(res);
+              }
             }
-          } catch (e: any) {
+          } catch {
             // Silently ignore parse errors
           }
         }
@@ -111,15 +130,14 @@ export class NativeBridge {
         console.error('[NativeBridge STDERR]:', d.toString());
       });
 
-      this.child.on('exit', (code) => {
+      this.child.on('exit', () => {
         this.isReady = false;
-        if (this.pollInterval) clearInterval(this.pollInterval);
         // Auto-restart if unexpected exit
         setTimeout(() => {
           if (process.platform === 'win32' && this.isAvailable()) {
             this.start();
           }
-        }, 2000);
+        }, 1500);
       });
 
       // Poll native helper every 1 second
@@ -144,13 +162,53 @@ export class NativeBridge {
       try {
         this.child.stdin.write('\n');
       } catch {}
+    } else if (!this.child || !this.isReady) {
+      this.start();
     }
   }
 
+  /**
+   * Fast synchronous read of the latest telemetry snapshot
+   */
   public getSnapshot(): NativeTelemetryResult {
     return this.latestResult;
   }
 
+  /**
+   * Authoritative, guaranteed fresh snapshot from Windows OS.
+   * If stream is active, triggers a stream probe and waits up to 200ms.
+   * If stream fails or times out, immediately performs direct execFile query.
+   */
+  public async getFreshSnapshot(): Promise<NativeTelemetryResult> {
+    if (this.isReady && this.child && !this.child.killed) {
+      try {
+        const streamPromise = new Promise<NativeTelemetryResult>((resolve) => {
+          this.pendingResolvers.push(resolve);
+          this.queryOnce();
+          setTimeout(() => {
+            const idx = this.pendingResolvers.indexOf(resolve);
+            if (idx !== -1) {
+              this.pendingResolvers.splice(idx, 1);
+              // Fallback to latestResult or direct query
+              if (Date.now() - this.lastSuccessTimestamp < 1500 && this.latestResult.processId > 0) {
+                resolve(this.latestResult);
+              } else {
+                this.queryDirect().then(resolve);
+              }
+            }
+          }, 200);
+        });
+
+        return await streamPromise;
+      } catch {}
+    }
+
+    return await this.queryDirect();
+  }
+
+  /**
+   * Direct execution of HighPTelemetryNative.exe (isolated process, guaranteed fresh)
+   */
   public async queryDirect(): Promise<NativeTelemetryResult> {
     if (!this.isAvailable()) {
       return {
@@ -178,15 +236,19 @@ export class NativeBridge {
         }
         try {
           const data = JSON.parse(stdout.trim());
-          resolve({
+          const res: NativeTelemetryResult = {
             status: 'OK',
             hwnd: String(data.hwnd || '0'),
             processId: Number(data.processId) || 0,
             executable: data.executable || 'Unknown',
             executablePath: data.executablePath || '',
             windowTitle: data.windowTitle || '',
-            idleSeconds: Math.max(0, Number(data.idleSeconds) || 0)
-          });
+            idleSeconds: Math.max(0, Number(data.idleSeconds) || 0),
+            timestamp: data.timestamp || new Date().toISOString()
+          };
+          this.lastSuccessTimestamp = Date.now();
+          this.latestResult = res;
+          resolve(res);
         } catch (e: any) {
           resolve({
             status: 'ERROR',
@@ -202,7 +264,10 @@ export class NativeBridge {
   }
 
   public stop(): void {
-    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
     if (this.child) {
       try {
         this.child.stdin.write('exit\n');
@@ -210,6 +275,8 @@ export class NativeBridge {
       } catch {}
       this.child = null;
     }
+    this.isReady = false;
+    this.pendingResolvers = [];
   }
 }
 
