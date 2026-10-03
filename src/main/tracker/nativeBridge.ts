@@ -9,6 +9,7 @@ export interface NativeTelemetryResult {
   hwnd: string;
   processId: number;
   executable: string;
+  executablePath?: string;
   windowTitle?: string;
   idleSeconds: number;
   errorMessage?: string;
@@ -24,6 +25,7 @@ export class NativeBridge {
     hwnd: '0',
     processId: 0,
     executable: 'Unknown',
+    executablePath: '',
     windowTitle: '',
     idleSeconds: 0
   };
@@ -94,6 +96,7 @@ export class NativeBridge {
                 hwnd: String(data.hwnd || '0'),
                 processId: Number(data.processId) || 0,
                 executable: data.executable || 'Unknown',
+                executablePath: data.executablePath || '',
                 windowTitle: data.windowTitle || '',
                 idleSeconds: Math.max(0, Number(data.idleSeconds) || 0)
               };
@@ -180,6 +183,7 @@ export class NativeBridge {
             hwnd: String(data.hwnd || '0'),
             processId: Number(data.processId) || 0,
             executable: data.executable || 'Unknown',
+            executablePath: data.executablePath || '',
             windowTitle: data.windowTitle || '',
             idleSeconds: Math.max(0, Number(data.idleSeconds) || 0)
           });

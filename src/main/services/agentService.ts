@@ -1,8 +1,16 @@
 import axios from 'axios';
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
+import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { nativeBridge } from '../tracker/nativeBridge';
-import { resolveApplication } from '../tracker/appResolver';
+import {
+  resolveApplication,
+  TrackedApplicationEntry,
+  DEFAULT_REGISTRY_ENTRIES
+} from '../tracker/appResolver';
+import { windowTracker } from '../tracker/windowTracker';
 import { OfflineQueue, QueuedActivityItem } from '../queue/offlineQueue';
 import { ActivityState, ActivityEventType, BreakReason } from '../../shared/enums';
 
@@ -59,9 +67,19 @@ export class AgentService {
   private currentApp: string = 'Unknown Application';
   private currentProcess: string = 'unknown.exe';
   private currentCategory: string = 'Other';
+  private currentExecutablePath: string = '';
   private currentWindowTitle: string = '';
   private currentAppStartTime: Date = new Date();
   private currentAppStartMono: bigint = process.hrtime.bigint();
+  private currentAppIsTracked = false;
+  private currentAppIsIgnored = false;
+
+  // Application Registry
+  private dynamicRegistry: TrackedApplicationEntry[] = [];
+  private registryVersion = 0;
+  private registryFilePath: string;
+  private reportedUnknownExes: Set<string> = new Set();
+  private registrySyncTimer: NodeJS.Timeout | null = null;
 
   // Visual local display counters (synced with server)
   private activeSeconds = 0;
@@ -81,8 +99,102 @@ export class AgentService {
 
   constructor() {
     this.deviceIdentifier = `DEV-${os.hostname().toUpperCase()}-${os.platform().toUpperCase()}`;
+
+    let baseDir = '.';
+    try {
+      if (app && app.getPath) {
+        baseDir = app.getPath('userData');
+      }
+    } catch {
+      baseDir = '.';
+    }
+    if (!fs.existsSync(baseDir)) {
+      try {
+        fs.mkdirSync(baseDir, { recursive: true });
+      } catch {}
+    }
+    this.registryFilePath = path.join(baseDir, 'highp-app-registry.json');
+    this.loadRegistryFromDisk();
+
     // Start native Win32 bridge on initialization
     nativeBridge.start();
+  }
+
+  private loadRegistryFromDisk(): void {
+    try {
+      if (fs.existsSync(this.registryFilePath)) {
+        const raw = fs.readFileSync(this.registryFilePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.applications)) {
+          this.registryVersion = parsed.version || 0;
+          this.dynamicRegistry = parsed.applications;
+          windowTracker.setDynamicRegistry(this.dynamicRegistry);
+          return;
+        } else if (Array.isArray(parsed) && parsed.length > 0) {
+          this.dynamicRegistry = parsed;
+          windowTracker.setDynamicRegistry(this.dynamicRegistry);
+          return;
+        }
+      }
+    } catch (e: any) {
+      console.warn('[AgentService] Could not read registry from disk, using defaults:', e.message);
+    }
+    this.dynamicRegistry = [...DEFAULT_REGISTRY_ENTRIES];
+    windowTracker.setDynamicRegistry(this.dynamicRegistry);
+  }
+
+  private saveRegistryToDisk(): void {
+    try {
+      const payload = {
+        version: this.registryVersion,
+        applications: this.dynamicRegistry
+      };
+      fs.writeFileSync(this.registryFilePath, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[AgentService] Could not save registry to disk:', e.message);
+    }
+  }
+
+  public async syncApplicationRegistry(): Promise<void> {
+    if (!this.token) return;
+    try {
+      const res = await axios.get(`${this.config.apiUrl}/api/agent/applications/config?version=${this.registryVersion}`, {
+        headers: { Authorization: `Bearer ${this.token}` },
+        timeout: 5000
+      });
+      if (res.data?.data) {
+        if (res.data.data.upToDate) {
+          return;
+        }
+        if (Array.isArray(res.data.data.applications)) {
+          this.registryVersion = res.data.data.version || Date.now();
+          this.dynamicRegistry = res.data.data.applications;
+          windowTracker.setDynamicRegistry(this.dynamicRegistry);
+          this.saveRegistryToDisk();
+          console.log(`[AgentService] Application Registry updated to version ${this.registryVersion} (${this.dynamicRegistry.length} apps)`);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AgentService] Registry sync warning (using cached registry):', err.message);
+    }
+  }
+
+  private async reportUnknownApp(executable: string, executablePath?: string, windowTitle?: string): Promise<void> {
+    const key = (executable || '').trim().toLowerCase();
+    if (!this.token || !key || this.reportedUnknownExes.has(key)) return;
+    this.reportedUnknownExes.add(key);
+
+    try {
+      await axios.post(
+        `${this.config.apiUrl}/api/agent/applications/discovered`,
+        {
+          executableName: executable,
+          executablePath: executablePath || '',
+          windowTitle: windowTitle || ''
+        },
+        { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
+      );
+    } catch {}
   }
 
   public setStateChangeCallback(cb: (state: AgentState) => void): void {
@@ -142,6 +254,7 @@ export class AgentService {
         }
 
         await this.registerDevice();
+        await this.syncApplicationRegistry();
         this.startLoops();
         this.notifyStateChange();
         return true;
@@ -283,11 +396,11 @@ export class AgentService {
   }
 
   // Close active interval and enqueue to offline queue using monotonic elapsed duration
+  // Only records activity if the application is TRACKED according to the Application Registry
   private flushCurrentInterval(type: ActivityEventType = ActivityEventType.APPLICATION_FOCUS): void {
     if (!this.isWorking || this.isOnBreak || !this.currentSessionId) return;
 
     const now = new Date();
-    // Calculate elapsed time from monotonic clock to prevent clock drift / adjustments
     const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
     const durationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
 
@@ -296,9 +409,16 @@ export class AgentService {
       this.currentApp.toLowerCase().includes('electron') ||
       this.currentApp === 'Unknown Application';
 
-    if (durationSeconds >= 1 && this.currentApp && !isSelfApp) {
+    // Only record if duration >= 1s and application is TRACKED and not ignored
+    if (
+      durationSeconds >= 1 &&
+      this.currentApp &&
+      this.currentAppIsTracked &&
+      !this.currentAppIsIgnored &&
+      !isSelfApp
+    ) {
       const eventId = uuidv4();
-      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}`);
+      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}\nduration=${durationSeconds}s`);
       this.offlineQueue.enqueue(eventId, type, {
         applicationName: this.currentApp,
         processName: this.currentProcess,
@@ -331,12 +451,18 @@ export class AgentService {
     this.syncTimer = setInterval(async () => {
       await this.syncQueuedEvents();
     }, 10000);
+
+    // 4. Registry configuration sync loop (every 60 seconds)
+    this.registrySyncTimer = setInterval(async () => {
+      await this.syncApplicationRegistry();
+    }, 60000);
   }
 
   private stopLoops(): void {
     if (this.trackingTimer) clearInterval(this.trackingTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.syncTimer) clearInterval(this.syncTimer);
+    if (this.registrySyncTimer) clearInterval(this.registrySyncTimer);
   }
 
   private async runTrackingTick(): Promise<void> {
@@ -348,7 +474,7 @@ export class AgentService {
       return;
     }
 
-    // 1. Query Native Windows Bridge
+    // 1. Query Native Windows Bridge (returns hwnd, processId, executable, executablePath, idleSeconds)
     const snapshot = nativeBridge.getSnapshot();
 
     if (snapshot.status === 'ERROR') {
@@ -382,17 +508,21 @@ export class AgentService {
       }
       this.activeSeconds += 1;
 
-      // 3. Resolve Foreground Application
-      const exeLower = (snapshot.executable || '').toLowerCase();
+      // 3. Authoritative Foreground Application Resolution
+      const resolved = resolveApplication(
+        snapshot.executable,
+        snapshot.executablePath,
+        snapshot.processId,
+        this.dynamicRegistry
+      );
+
       const isAgentSelf =
+        resolved.category === 'System' ||
         snapshot.processId === process.pid ||
-        exeLower.includes('highp') ||
-        exeLower === 'electron.exe' ||
-        exeLower.includes('telemetry');
+        (snapshot.executable || '').toLowerCase().includes('highp');
 
       if (isAgentSelf) {
         if (this.currentApp !== 'HighP Agent') {
-          // User switched to HighP Agent: close previous application interval
           this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
           this.previousHwnd = snapshot.hwnd;
           this.previousPid = snapshot.processId;
@@ -400,45 +530,59 @@ export class AgentService {
           this.currentApp = 'HighP Agent';
           this.currentProcess = snapshot.executable || 'HighPAgent.exe';
           this.currentCategory = 'System';
+          this.currentExecutablePath = snapshot.executablePath || '';
+          this.currentAppIsTracked = false;
+          this.currentAppIsIgnored = true;
           this.currentWindowTitle = snapshot.windowTitle || 'HighP Agent';
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
           this.notifyStateChange();
           this.sendHeartbeat().catch(() => {});
         }
-      } else {
-        const resolved = resolveApplication(snapshot.executable, snapshot.windowTitle);
-        const hasIdentityChanged =
-          resolved.applicationName !== this.currentApp ||
-          (snapshot.processId > 0 && snapshot.processId !== this.previousPid) ||
-          (snapshot.hwnd && snapshot.hwnd !== '0' && snapshot.hwnd !== this.previousHwnd);
+        const isSameApplication =
+          resolved.name === this.currentApp &&
+          resolved.executableName.toLowerCase() === (this.currentProcess || '').toLowerCase() &&
+          resolved.tracked === this.currentAppIsTracked &&
+          resolved.category === this.currentCategory;
 
-        if (hasIdentityChanged) {
+        if (!isSameApplication) {
           const prevApp = this.currentApp;
-          // Window switch detected: close previous app interval and open new one
+          // Application switch detected: flush previous application interval
           this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
 
           this.previousHwnd = snapshot.hwnd;
           this.previousPid = snapshot.processId;
           this.previousExecutable = snapshot.executable || '';
-          // Authoritative application identity: never fall back to previous application
-          this.currentApp = resolved.applicationName || 'Unknown Application';
-          this.currentProcess = resolved.processName;
+          this.currentApp = resolved.name;
+          this.currentProcess = resolved.executableName;
           this.currentCategory = resolved.category;
-          this.currentWindowTitle = snapshot.windowTitle || resolved.applicationName;
+          this.currentExecutablePath = snapshot.executablePath || '';
+          this.currentAppIsTracked = resolved.tracked;
+          this.currentAppIsIgnored = resolved.ignored;
+          this.currentWindowTitle = snapshot.windowTitle || resolved.name;
           this.currentAppStartTime = new Date();
           this.currentAppStartMono = process.hrtime.bigint();
 
-          console.log(`[WINDOW]\nHWND=${snapshot.hwnd}\nPID=${snapshot.processId}\nEXE=${snapshot.executable}`);
-          console.log(`[APP]\nresolvedApplication=${resolved.applicationName}`);
-          console.log(`[STATE]\npreviousApplication=${prevApp}\ncurrentApplication=${this.currentApp}`);
-          console.log(`[TIME]\nstartedAt=${this.currentAppStartTime.toISOString()}\nlastSeenAt=${new Date().toISOString()}`);
+          // Section 28 Diagnostic Logging
+          console.log(`[Telemetry]\nPID: ${snapshot.processId}\nExecutable: ${snapshot.executable}`);
+          if (resolved.trackingState === 'UNKNOWN' || resolved.isUnknown) {
+            console.log(`[Resolver]\nUnknown executable:\n${snapshot.executable}`);
+            this.reportUnknownApp(snapshot.executable, snapshot.executablePath, snapshot.windowTitle);
+          } else if (resolved.trackingState === 'IGNORED' || resolved.ignored) {
+            console.log(`[Resolver]\n${resolved.name}\nState: IGNORED\nActivity suppressed`);
+          } else {
+            console.log(`[Resolver]\nApplication: ${resolved.name}\nCategory: ${resolved.category}\nState: TRACKED`);
+            console.log(`[WindowTracker]\nApplication changed:\n${prevApp} → ${resolved.name}`);
+            console.log(`[Activity]\nSession started:\n${resolved.name}`);
+          }
 
           this.notifyStateChange();
 
-          // Instantly send live heartbeat and sync queued events so dashboard updates in real time
+          // Instantly send live heartbeat and sync queued events
           this.sendHeartbeat().catch(() => {});
-          this.syncQueuedEvents().catch(() => {});
+          if (this.currentAppIsTracked) {
+            this.syncQueuedEvents().catch(() => {});
+          }
         } else {
           this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
           this.notifyStateChange();
@@ -452,7 +596,10 @@ export class AgentService {
 
     try {
       const snap = nativeBridge.getSnapshot();
+      // Only report as tracked currentApplication if tracking is enabled in Application Registry
       const cleanApp =
+        this.currentAppIsTracked &&
+        !this.currentAppIsIgnored &&
         this.currentApp &&
         !this.currentApp.toLowerCase().includes('highp') &&
         !this.currentApp.toLowerCase().includes('electron')

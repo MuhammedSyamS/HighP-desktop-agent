@@ -18,3 +18,18 @@ export enum BreakReason {
   COFFEE = 'COFFEE',
   OTHER = 'OTHER'
 }
+
+export enum ApplicationCategory {
+  ALL = 'All',
+  DEVELOPMENT = 'Development',
+  DESIGN = 'Design',
+  COMMUNICATION = 'Communication',
+  BROWSERS = 'Browsers',
+  PRODUCTIVITY = 'Productivity',
+  MARKETING = 'Marketing',
+  PROJECT_MANAGEMENT = 'Project Management',
+  FILE_MANAGEMENT = 'File Management',
+  MEDIA = 'Media',
+  OTHER = 'Other'
+}
+

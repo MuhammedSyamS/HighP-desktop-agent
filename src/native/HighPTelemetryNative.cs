@@ -68,27 +68,35 @@ public class Program {
         } catch {}
     }
 
-    static string GetProcessExeByPid(uint pid) {
-        if (pid == 0) return "Unknown";
-        try {
-            using (Process p = Process.GetProcessById((int)pid)) {
-                return p.ProcessName + ".exe";
-            }
-        } catch {
-            IntPtr hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-            if (hProc != IntPtr.Zero) {
-                try {
-                    StringBuilder sb = new StringBuilder(1024);
-                    uint size = (uint)sb.Capacity;
-                    if (QueryFullProcessImageName(hProc, 0, sb, ref size)) {
-                        return Path.GetFileName(sb.ToString());
-                    }
-                } finally {
-                    CloseHandle(hProc);
+    static void GetProcessInfo(uint pid, out string procName, out string procPath) {
+        procName = "Unknown";
+        procPath = "";
+        if (pid == 0) return;
+
+        IntPtr hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (hProc != IntPtr.Zero) {
+            try {
+                StringBuilder sb = new StringBuilder(1024);
+                uint size = (uint)sb.Capacity;
+                if (QueryFullProcessImageName(hProc, 0, sb, ref size)) {
+                    procPath = sb.ToString();
+                    procName = Path.GetFileName(procPath);
                 }
+            } finally {
+                CloseHandle(hProc);
             }
         }
-        return "Unknown";
+
+        if (procName.Equals("Unknown", StringComparison.OrdinalIgnoreCase)) {
+            try {
+                using (Process p = Process.GetProcessById((int)pid)) {
+                    procName = p.ProcessName + ".exe";
+                    try {
+                        procPath = p.MainModule.FileName;
+                    } catch {}
+                }
+            } catch {}
+        }
     }
 
     static string GetTelemetryJson() {
@@ -96,12 +104,13 @@ public class Program {
         IntPtr hwnd = GetForegroundWindow();
         uint pid = 0;
         string procName = "Unknown";
+        string procPath = "";
         string windowTitle = "";
 
         if (hwnd != IntPtr.Zero) {
             GetWindowThreadProcessId(hwnd, out pid);
             if (pid > 0) {
-                procName = GetProcessExeByPid(pid);
+                GetProcessInfo(pid, out procName, out procPath);
 
                 // If the top-level window is ApplicationFrameHost (UWP wrapper), drill down to the hosted app window
                 if (procName.Equals("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) {
@@ -118,10 +127,13 @@ public class Program {
                     }, IntPtr.Zero);
 
                     if (realPid > 0) {
-                        string childExe = GetProcessExeByPid(realPid);
+                        string childExe;
+                        string childPath;
+                        GetProcessInfo(realPid, out childExe, out childPath);
                         if (!childExe.Equals("Unknown", StringComparison.OrdinalIgnoreCase)) {
                             pid = realPid;
                             procName = childExe;
+                            procPath = childPath;
                         }
                     }
                 }
@@ -142,10 +154,11 @@ public class Program {
         }
 
         return string.Format(
-            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"windowTitle\":\"{3}\",\"idleSeconds\":{4}}}",
+            "{{\"status\":\"OK\",\"hwnd\":\"{0}\",\"processId\":{1},\"executable\":\"{2}\",\"executablePath\":\"{3}\",\"windowTitle\":\"{4}\",\"idleSeconds\":{5}}}",
             hwnd.ToInt64(),
             pid,
             procName.Replace("\\", "\\\\").Replace("\"", "\\\""),
+            procPath.Replace("\\", "\\\\").Replace("\"", "\\\""),
             windowTitle.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " "),
             idleSeconds
         );

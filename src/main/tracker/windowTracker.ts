@@ -1,20 +1,38 @@
-import { nativeBridge } from './nativeBridge';
-import { resolveApplication } from './appResolver';
+import { nativeBridge, NativeTelemetryResult } from './nativeBridge';
+import { resolveApplication, ResolvedApplication, TrackedApplicationEntry } from './appResolver';
 
 export interface ActiveWindowInfo {
   applicationName: string;
   processName: string;
+  executablePath?: string;
+  category: string;
+  trackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN';
   windowTitleSanitized: string;
+  rawSnapshot: NativeTelemetryResult;
+  resolved: ResolvedApplication;
 }
 
 export class WindowTracker {
+  private dynamicRegistry: TrackedApplicationEntry[] = [];
+
+  public setDynamicRegistry(registry: TrackedApplicationEntry[]): void {
+    this.dynamicRegistry = registry;
+  }
+
   public async getActiveWindow(): Promise<ActiveWindowInfo> {
     const raw = nativeBridge.getSnapshot();
-    const resolved = resolveApplication(raw.executable || '');
+    const resolved = resolveApplication(raw.executable || '', raw.executablePath, raw.processId, this.dynamicRegistry);
     return {
-      applicationName: resolved.applicationName,
+      applicationName: resolved.name,
       processName: raw.executable || 'unknown.exe',
-      windowTitleSanitized: raw.windowTitle || resolved.applicationName
+      executablePath: raw.executablePath,
+      category: resolved.category,
+      trackingState: resolved.trackingState,
+      windowTitleSanitized: raw.windowTitle || resolved.name,
+      rawSnapshot: raw,
+      resolved
     };
   }
 }
+
+export const windowTracker = new WindowTracker();

@@ -1,139 +1,323 @@
-export interface ResolvedApp {
+import path from 'path';
+
+export interface ResolvedApplication {
+  applicationId?: string;
+  name: string;
+  executableName: string;
+  executablePath?: string;
+  processId: number;
+  category: string;
+  trackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN';
+  tracked: boolean;
+  ignored: boolean;
+  isUnknown: boolean;
+  confidence: 'high' | 'medium' | 'unknown';
+}
+
+// Backward-compatible alias for existing code
+export type ResolvedApp = {
+  applicationId?: string;
   applicationName: string;
   processName: string;
   category: string;
+  trackingState?: 'TRACKED' | 'IGNORED' | 'UNKNOWN';
   isRecognized: boolean;
-}
-
-const KNOWN_EXECUTABLES: Record<string, { name: string; category: string }> = {
-  // Development
-  'code.exe': { name: 'Visual Studio Code', category: 'Development' },
-  'devenv.exe': { name: 'Visual Studio', category: 'Development' },
-  'idea64.exe': { name: 'IntelliJ IDEA', category: 'Development' },
-  'webstorm64.exe': { name: 'WebStorm', category: 'Development' },
-  'pycharm64.exe': { name: 'PyCharm', category: 'Development' },
-  'postman.exe': { name: 'Postman', category: 'Development' },
-  'dbeaver.exe': { name: 'DBeaver', category: 'Development' },
-  'powershell.exe': { name: 'PowerShell', category: 'Development' },
-  'cmd.exe': { name: 'Command Prompt', category: 'Development' },
-  'windowsterminal.exe': { name: 'Windows Terminal', category: 'Development' },
-  'git-bash.exe': { name: 'Git Bash', category: 'Development' },
-  'githubdesktop.exe': { name: 'GitHub Desktop', category: 'Development' },
-  'cursor.exe': { name: 'Cursor IDE', category: 'Development' },
-  'antigravity ide.exe': { name: 'Antigravity IDE', category: 'Development' },
-  'antigravity.exe': { name: 'Antigravity IDE', category: 'Development' },
-
-  // Browsers
-  'chrome.exe': { name: 'Google Chrome', category: 'Productivity' },
-  'msedge.exe': { name: 'Microsoft Edge', category: 'Productivity' },
-  'firefox.exe': { name: 'Mozilla Firefox', category: 'Productivity' },
-  'brave.exe': { name: 'Brave Browser', category: 'Productivity' },
-  'opera.exe': { name: 'Opera Browser', category: 'Productivity' },
-
-  // Design & Media
-  'figma.exe': { name: 'Figma', category: 'Design' },
-  'photoshop.exe': { name: 'Adobe Photoshop', category: 'Design' },
-  'illustrator.exe': { name: 'Adobe Illustrator', category: 'Design' },
-  'xd.exe': { name: 'Adobe XD', category: 'Design' },
-  'blender.exe': { name: 'Blender', category: 'Design' },
-
-  // Communication & Meetings
-  'slack.exe': { name: 'Slack', category: 'Communication' },
-  'teams.exe': { name: 'Microsoft Teams', category: 'Communication' },
-  'discord.exe': { name: 'Discord', category: 'Communication' },
-  'zoom.exe': { name: 'Zoom Meeting', category: 'Communication' },
-
-  // Office & Productivity
-  'excel.exe': { name: 'Microsoft Excel', category: 'Productivity' },
-  'winword.exe': { name: 'Microsoft Word', category: 'Productivity' },
-  'powerpnt.exe': { name: 'Microsoft PowerPoint', category: 'Productivity' },
-  'outlook.exe': { name: 'Microsoft Outlook', category: 'Productivity' },
-  'notion.exe': { name: 'Notion', category: 'Productivity' },
-  'obsidian.exe': { name: 'Obsidian', category: 'Productivity' },
-  'notepad.exe': { name: 'Notepad', category: 'Productivity' },
-  'notepad++.exe': { name: 'Notepad++', category: 'Productivity' },
-  'explorer.exe': { name: 'File Explorer', category: 'Productivity' },
-  'spotify.exe': { name: 'Spotify', category: 'Media' },
-  'spotifylauncher.exe': { name: 'Spotify', category: 'Media' },
-  'spotify_cli.exe': { name: 'Spotify', category: 'Media' }
+  tracked?: boolean;
+  ignored?: boolean;
 };
 
-export const resolveApplication = (executable: string, windowTitle?: string): ResolvedApp => {
-  const raw = (executable || '').trim();
-  const normalizedKey = raw.toLowerCase().endsWith('.exe') ? raw.toLowerCase() : `${raw.toLowerCase()}.exe`;
+export interface TrackedApplicationEntry {
+  id?: string;
+  name: string;
+  executableNames: string[];
+  executablePaths?: string[];
+  category: string;
+  tracked: boolean;
+  ignored: boolean;
+  isSystemApp?: boolean;
+}
 
-  // Internal agent processes should never be tracked as user work applications
+// Built-in offline fallback registry (authoritative executable -> application mappings)
+export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
+  // Development
+  { name: 'Visual Studio Code', executableNames: ['code.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Cursor', executableNames: ['cursor.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Visual Studio', executableNames: ['devenv.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'IntelliJ IDEA', executableNames: ['idea64.exe', 'idea.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'WebStorm', executableNames: ['webstorm64.exe', 'webstorm.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Android Studio', executableNames: ['studio64.exe', 'studio.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'PyCharm', executableNames: ['pycharm64.exe', 'pycharm.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Git', executableNames: ['git.exe', 'git-bash.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'GitHub Desktop', executableNames: ['githubdesktop.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Antigravity IDE', executableNames: ['antigravity.exe', 'antigravity ide.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Windows Terminal', executableNames: ['windowsterminal.exe', 'powershell.exe', 'cmd.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Postman', executableNames: ['postman.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'DBeaver', executableNames: ['dbeaver.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+
+  // Design
+  { name: 'Figma', executableNames: ['figma.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Adobe Photoshop', executableNames: ['photoshop.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Adobe Illustrator', executableNames: ['illustrator.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Adobe Premiere Pro', executableNames: ['premiere.exe', 'premierepro.exe', 'adobe premiere pro.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Adobe After Effects', executableNames: ['afterfx.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Adobe XD', executableNames: ['xd.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Canva', executableNames: ['canva.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Blender', executableNames: ['blender.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
+
+  // Communication
+  { name: 'Slack', executableNames: ['slack.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Teams', executableNames: ['teams.exe', 'ms-teams.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Discord', executableNames: ['discord.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Zoom', executableNames: ['zoom.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+
+  // Browsers
+  { name: 'Google Chrome', executableNames: ['chrome.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Edge', executableNames: ['msedge.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Mozilla Firefox', executableNames: ['firefox.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Brave', executableNames: ['brave.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Opera', executableNames: ['opera.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+
+  // Productivity
+  { name: 'Notion', executableNames: ['notion.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Word', executableNames: ['winword.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Excel', executableNames: ['excel.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft PowerPoint', executableNames: ['powerpnt.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Outlook', executableNames: ['outlook.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Notepad', executableNames: ['notepad.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Notepad++', executableNames: ['notepad++.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Obsidian', executableNames: ['obsidian.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+
+  // Project Management
+  { name: 'Jira', executableNames: ['jira.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Trello', executableNames: ['trello.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'ClickUp', executableNames: ['clickup.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Asana', executableNames: ['asana.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
+
+  // Marketing
+  { name: 'Google Ads', executableNames: ['googleads.exe', 'google-ads.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Google Analytics', executableNames: ['googleanalytics.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Meta Business Suite', executableNames: ['metabusiness.exe', 'meta business suite.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },
+
+  // File Management
+  { name: 'Windows File Explorer', executableNames: ['explorer.exe'], category: 'File Management', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'OneDrive', executableNames: ['onedrive.exe'], category: 'File Management', tracked: true, ignored: false, isSystemApp: false },
+
+  // Media
+  { name: 'Spotify', executableNames: ['spotify.exe', 'spotifylauncher.exe', 'spotify_cli.exe'], category: 'Media', tracked: false, ignored: true, isSystemApp: false },
+  { name: 'VLC Media Player', executableNames: ['vlc.exe'], category: 'Media', tracked: false, ignored: true, isSystemApp: false },
+
+  // Internal / System
+  { name: 'HighP Agent', executableNames: ['highp agent.exe', 'highptelemetrynative.exe', 'electron.exe'], category: 'Other', tracked: false, ignored: true, isSystemApp: true }
+];
+
+export const normalizeExeKey = (raw: string): string => {
+  const trimmed = (raw || '').trim().toLowerCase();
+  if (!trimmed) return '';
+  const base = path.basename(trimmed);
+  return base.endsWith('.exe') ? base : `${base}.exe`;
+};
+
+/**
+ * Authoritative Application Resolver
+ * Resolution Hierarchy:
+ * 1. Internal self-agent check
+ * 2. Exact executable path match in dynamic registry
+ * 3. Exact executable name match in dynamic registry
+ * 4. Exact executable name match in default registry
+ * 5. Registered executable aliases
+ * 6. Unknown application (not silently misidentified!)
+ * Window title is never used as the primary identifier.
+ */
+export const resolveApplication = (
+  executable: string,
+  executablePathOrTitle?: string,
+  processId: number = 0,
+  dynamicRegistry: TrackedApplicationEntry[] = []
+): ResolvedApplication & ResolvedApp => {
+  const rawExe = (executable || '').trim();
+  const normalizedKey = normalizeExeKey(rawExe);
+  const normalizedPath = (executablePathOrTitle && executablePathOrTitle.includes('\\') ? executablePathOrTitle.trim().toLowerCase() : '');
+
+  // 1. Internal Agent Process Check
   if (
     normalizedKey.includes('highp') ||
     normalizedKey === 'electron.exe' ||
     normalizedKey.includes('telemetry')
   ) {
     return {
+      applicationId: undefined,
+      name: 'HighP Agent',
       applicationName: 'HighP Agent',
-      processName: normalizedKey,
+      executableName: normalizedKey || 'HighPAgent.exe',
+      processName: normalizedKey || 'HighPAgent.exe',
+      executablePath: normalizedPath,
+      processId,
       category: 'System',
-      isRecognized: false
+      trackingState: 'IGNORED',
+      tracked: false,
+      ignored: true,
+      isUnknown: false,
+      isRecognized: false,
+      confidence: 'high'
     };
   }
 
-  // Windows UWP / modern app wrapper
-  if (normalizedKey === 'applicationframehost.exe' && windowTitle) {
-    const cleanTitle = windowTitle.trim();
-    if (cleanTitle && cleanTitle.toLowerCase() !== 'applicationframehost') {
-      return {
-        applicationName: cleanTitle,
-        processName: 'ApplicationFrameHost.exe',
-        category: 'Productivity',
-        isRecognized: true
-      };
+  // 2. Exact Path Match in Dynamic Registry
+  if (normalizedPath && dynamicRegistry.length > 0) {
+    for (const app of dynamicRegistry) {
+      if (app.executablePaths && app.executablePaths.some((p) => p.toLowerCase() === normalizedPath)) {
+        const isTracked = Boolean(app.tracked);
+        return {
+          applicationId: app.id,
+          name: app.name,
+          applicationName: app.name,
+          executableName: normalizedKey,
+          processName: normalizedKey,
+          executablePath: normalizedPath,
+          processId,
+          category: app.category,
+          trackingState: isTracked ? 'TRACKED' : 'IGNORED',
+          tracked: isTracked,
+          ignored: Boolean(app.ignored !== undefined ? app.ignored : !isTracked),
+          isUnknown: false,
+          isRecognized: true,
+          confidence: 'high'
+        };
+      }
     }
   }
 
-  if (KNOWN_EXECUTABLES[normalizedKey]) {
-    const entry = KNOWN_EXECUTABLES[normalizedKey];
-    return {
-      applicationName: entry.name,
-      processName: normalizedKey,
-      category: entry.category,
-      isRecognized: true
-    };
+  // 3. Exact Executable Name Match in Dynamic Registry (Synced from Server)
+  if (normalizedKey && dynamicRegistry.length > 0) {
+    for (const app of dynamicRegistry) {
+      const match = app.executableNames.some((e) => normalizeExeKey(e) === normalizedKey);
+      if (match) {
+        const isTracked = Boolean(app.tracked);
+        return {
+          applicationId: app.id,
+          name: app.name,
+          applicationName: app.name,
+          executableName: normalizedKey,
+          processName: normalizedKey,
+          executablePath: normalizedPath,
+          processId,
+          category: app.category,
+          trackingState: isTracked ? 'TRACKED' : 'IGNORED',
+          tracked: isTracked,
+          ignored: Boolean(app.ignored !== undefined ? app.ignored : !isTracked),
+          isUnknown: false,
+          isRecognized: true,
+          confidence: 'high'
+        };
+      }
+    }
   }
 
+  // 4. Exact Executable Name Match in Built-in Default Registry
+  if (normalizedKey) {
+    for (const app of DEFAULT_REGISTRY_ENTRIES) {
+      const match = app.executableNames.some((e) => normalizeExeKey(e) === normalizedKey);
+      if (match) {
+        const isTracked = Boolean(app.tracked);
+        return {
+          applicationId: app.id,
+          name: app.name,
+          applicationName: app.name,
+          executableName: normalizedKey,
+          processName: normalizedKey,
+          executablePath: normalizedPath,
+          processId,
+          category: app.category,
+          trackingState: isTracked ? 'TRACKED' : 'IGNORED',
+          tracked: isTracked,
+          ignored: Boolean(app.ignored !== undefined ? app.ignored : !isTracked),
+          isUnknown: false,
+          isRecognized: true,
+          confidence: 'high'
+        };
+      }
+    }
+  }
+
+  // 5. Registered Executable Aliases (Safe prefix / substring checks)
   if (normalizedKey.includes('spotify')) {
     return {
+      applicationId: undefined,
+      name: 'Spotify',
       applicationName: 'Spotify',
+      executableName: normalizedKey,
       processName: normalizedKey,
+      executablePath: normalizedPath,
+      processId,
       category: 'Media',
-      isRecognized: true
+      trackingState: 'IGNORED',
+      tracked: false,
+      ignored: true,
+      isUnknown: false,
+      isRecognized: true,
+      confidence: 'high'
     };
   }
 
   if (normalizedKey.includes('antigravity')) {
     return {
+      applicationId: undefined,
+      name: 'Antigravity IDE',
       applicationName: 'Antigravity IDE',
+      executableName: normalizedKey,
       processName: normalizedKey,
+      executablePath: normalizedPath,
+      processId,
       category: 'Development',
-      isRecognized: true
+      trackingState: 'TRACKED',
+      tracked: true,
+      ignored: false,
+      isUnknown: false,
+      isRecognized: true,
+      confidence: 'high'
     };
   }
 
-  // Handle generic / unknown
-  const baseName = raw.replace(/\.exe$/i, '').trim();
-  if (!baseName || baseName.toLowerCase() === 'unknown' || baseName.toLowerCase() === 'idle') {
+  if (normalizedKey.includes('cursor')) {
     return {
-      applicationName: 'Unknown Application',
-      processName: normalizedKey || 'unknown.exe',
-      category: 'Other',
-      isRecognized: false
+      applicationId: undefined,
+      name: 'Cursor',
+      applicationName: 'Cursor',
+      executableName: normalizedKey,
+      processName: normalizedKey,
+      executablePath: normalizedPath,
+      processId,
+      category: 'Development',
+      trackingState: 'TRACKED',
+      tracked: true,
+      ignored: false,
+      isUnknown: false,
+      isRecognized: true,
+      confidence: 'high'
     };
   }
 
-  // Capitalize clean base name if not in dictionary
-  const formattedName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+  // 6. Unknown Application
+  // Critical requirement: Do not guess or silently reclassify unknown applications as known apps!
+  const baseName = rawExe.replace(/\.exe$/i, '').trim();
+  const displayName = baseName && baseName.toLowerCase() !== 'unknown' && baseName.toLowerCase() !== 'idle'
+    ? baseName.charAt(0).toUpperCase() + baseName.slice(1)
+    : 'Unknown Application';
+
   return {
-    applicationName: formattedName,
-    processName: normalizedKey,
+    applicationId: undefined,
+    name: displayName,
+    applicationName: displayName,
+    executableName: normalizedKey || 'unknown.exe',
+    processName: normalizedKey || 'unknown.exe',
+    executablePath: normalizedPath,
+    processId,
     category: 'Other',
-    isRecognized: true
+    trackingState: 'UNKNOWN',
+    tracked: false,
+    ignored: false,
+    isUnknown: true,
+    isRecognized: false,
+    confidence: 'unknown'
   };
 };
