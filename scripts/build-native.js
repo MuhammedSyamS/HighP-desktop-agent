@@ -21,12 +21,25 @@ if (!fs.existsSync(srcFile)) {
   process.exit(1);
 }
 
+if (fs.existsSync(outFile)) {
+  const srcStat = fs.statSync(srcFile);
+  const outStat = fs.statSync(outFile);
+  if (outStat.mtime >= srcStat.mtime) {
+    console.log('[Native Build] HighPTelemetryNative.exe is up to date.');
+    process.exit(0);
+  }
+}
+
 console.log(`[Native Build] Compiling ${srcFile} -> ${outFile}`);
 const result = spawnSync(cscPath, ['/target:exe', '/optimize+', `/out:${outFile}`, srcFile], {
   stdio: 'inherit'
 });
 
 if (result.error || result.status !== 0) {
+  if (fs.existsSync(outFile)) {
+    console.warn('[Native Build] Notice: HighPTelemetryNative.exe is in use by running process; existing binary will be used.');
+    process.exit(0);
+  }
   console.error('[Native Build] Failed to compile native bridge.');
   process.exit(result.status || 1);
 }
