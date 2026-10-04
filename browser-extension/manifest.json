@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "HighP Browser Activity Companion",
+  "version": "1.0.0",
+  "description": "Privacy-safe active website tracking companion for HighP Agent (Brave, Google Chrome, Microsoft Edge)",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:41789/*",
+    "http://localhost:41789/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HighP Browser Tracker"
+  }
+}
