@@ -160,7 +160,7 @@ export class NativeBridge {
   public queryOnce(): void {
     if (this.child && !this.child.killed && this.isReady) {
       try {
-        this.child.stdin.write('\n');
+        this.child.stdin.write('\r\n');
       } catch {}
     } else if (!this.child || !this.isReady) {
       this.start();

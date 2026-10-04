@@ -27,3 +27,10 @@ if (fs.existsSync(srcRenderer)) {
   copyDir(srcRenderer, distRenderer);
   console.log('[Assets] Renderer files copied to dist/renderer.');
 }
+
+const srcBin = path.resolve(__dirname, '../bin');
+const distBin = path.resolve(__dirname, '../dist/bin');
+if (fs.existsSync(srcBin)) {
+  copyDir(srcBin, distBin);
+  console.log('[Assets] Native bin files copied to dist/bin.');
+}

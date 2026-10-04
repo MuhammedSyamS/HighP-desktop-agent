@@ -358,6 +358,7 @@ export class AgentService {
       this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
+      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN`);
       this.notifyStateChange();
     } catch (err: any) {
       console.warn('[AgentService] Start session online failed, using offline session:', err.message);
@@ -368,11 +369,13 @@ export class AgentService {
       this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
+      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN`);
       this.notifyStateChange();
     }
   }
 
   public async endWork(): Promise<void> {
+    const endingSessionId = this.currentSessionId;
     this.flushCurrentInterval();
 
     if (this.token && this.currentSessionId && !this.currentSessionId.startsWith('local-')) {
@@ -391,6 +394,7 @@ export class AgentService {
     this.isOnBreak = false;
     this.currentStatus = ActivityState.OFFLINE;
     this.currentSessionId = undefined;
+    console.log(`[WORK_SESSION] action=END session=${endingSessionId} status=COMPLETED`);
     this.notifyStateChange();
   }
 
@@ -564,10 +568,7 @@ export class AgentService {
         this.dynamicRegistry
       );
 
-      const isAgentSelf =
-        snapshot.processId === process.pid ||
-        (snapshot.executable || '').toLowerCase().includes('highp') ||
-        (snapshot.executable || '').toLowerCase() === 'electron.exe';
+      const isAgentSelf = this.isActualAgentProcess(snapshot);
 
       if (isAgentSelf) {
         if (this.currentApp !== 'HighP Agent') {
@@ -743,6 +744,7 @@ export class AgentService {
 
       this.isOnline = true;
       this.lastHeartbeatTime = new Date().toLocaleTimeString();
+      console.log(`[HEARTBEAT] session=${this.currentSessionId} application=${cleanApp || 'None'} website=${this.currentWebsiteDomain || 'None'} status=${this.currentStatus}`);
     } catch (err: any) {
       this.isOnline = false;
       if (err.response?.status === 403) {
@@ -844,4 +846,30 @@ export class AgentService {
       this.notifyStateChange();
     }
   }
+
+  private isActualAgentProcess(snapshot: NativeTelemetryResult): boolean {
+    if (!snapshot || !snapshot.executable) return false;
+    if (snapshot.processId === process.pid) return true;
+    const exeLower = snapshot.executable.toLowerCase().trim();
+    if (
+      exeLower === 'highpagent.exe' ||
+      exeLower === 'highp-desktop-agent.exe' ||
+      exeLower === 'highp agent.exe'
+    ) {
+      return true;
+    }
+    if (exeLower === 'electron.exe') {
+      const pathLower = (snapshot.executablePath || '').toLowerCase();
+      const titleLower = (snapshot.windowTitle || '').toLowerCase();
+      if (
+        pathLower.includes('highp agent') ||
+        pathLower.includes('highp-desktop-agent') ||
+        titleLower.includes('highp agent')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
+
