@@ -451,6 +451,25 @@ export class AgentService {
     const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
     const durationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
 
+    // Special handling for IDLE_INTERVAL: record immediately without requiring application registry match
+    if (type === ActivityEventType.IDLE_INTERVAL) {
+      if (durationSeconds >= 1) {
+        const eventId = uuidv4();
+        console.log(`[EVENT]\neventId=${eventId}\ntype=IDLE_INTERVAL\napplication=System Idle\nduration=${durationSeconds}s`);
+        this.offlineQueue.enqueue(eventId, ActivityEventType.IDLE_INTERVAL, {
+          applicationName: 'System Idle',
+          processName: 'idle',
+          windowTitleSanitized: 'System Idle',
+          startedAt: this.currentAppStartTime.toISOString(),
+          endedAt: now.toISOString(),
+          durationSeconds
+        });
+      }
+      this.currentAppStartTime = now;
+      this.currentAppStartMono = process.hrtime.bigint();
+      return;
+    }
+
     const isSelfApp =
       this.currentApp.toLowerCase().includes('highp') ||
       this.currentApp.toLowerCase().includes('electron') ||
@@ -546,7 +565,10 @@ export class AgentService {
         // Transition from ACTIVE to IDLE: close active app interval
         this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
         this.currentStatus = ActivityState.IDLE;
+        this.currentAppStartTime = new Date();
+        this.currentAppStartMono = process.hrtime.bigint();
         this.notifyStateChange();
+        this.sendHeartbeat().catch(() => {});
       }
       this.idleSeconds += 1;
     } else {
@@ -558,6 +580,8 @@ export class AgentService {
         this.currentAppStartTime = new Date();
         this.currentAppStartMono = process.hrtime.bigint();
         this.notifyStateChange();
+        this.sendHeartbeat().catch(() => {});
+        this.syncQueuedEvents().catch(() => {});
       }
       this.activeSeconds += 1;
 
