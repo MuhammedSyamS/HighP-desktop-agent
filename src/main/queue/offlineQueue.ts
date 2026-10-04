@@ -136,7 +136,15 @@ export class OfflineQueue {
     const now = Date.now();
     const readyItems = this.items.filter((item) => {
       if (item.status === 'SYNCED') return false;
-      if (item.status === 'SYNCING') return false;
+      // Auto-recover stale in-flight SYNCING items if interrupted or timed out
+      if (item.status === 'SYNCING') {
+        const attemptAge = item.lastAttemptAt ? now - new Date(item.lastAttemptAt).getTime() : Infinity;
+        if (attemptAge > 45000) {
+          item.status = 'PENDING';
+        } else {
+          return false;
+        }
+      }
       if (item.nextRetryAt && now < item.nextRetryAt) return false;
       return true;
     });

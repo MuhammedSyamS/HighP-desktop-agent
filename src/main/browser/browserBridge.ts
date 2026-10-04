@@ -32,6 +32,13 @@ export class BrowserBridge {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-HighP-Extension, Authorization');
+      res.setHeader('Connection', 'close');
+
+      req.on('error', (err) => {
+        console.warn('[BrowserBridge] Request socket error:', err.message);
+      });
+
+      const urlPath = (req.url || '').split('?')[0];
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -39,18 +46,20 @@ export class BrowserBridge {
         return;
       }
 
-      if (req.method === 'GET' && req.url === '/api/browser/health') {
+      if (req.method === 'GET' && urlPath === '/api/browser/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', domain: this.latestActivity?.domain || null }));
         return;
       }
 
-      if (req.method === 'POST' && req.url === '/api/browser/activity') {
+      if (req.method === 'POST' && urlPath === '/api/browser/activity') {
         let body = '';
         req.on('data', (chunk) => {
           body += chunk;
           if (body.length > 10240) {
-            req.destroy(); // Prevent memory flooding
+            res.writeHead(413, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Payload too large' }));
+            req.destroy();
           }
         });
 
