@@ -16,5 +16,5 @@ A lightweight, Chromium-compatible browser extension for **Brave, Google Chrome,
    - **Edge**: `edge://extensions`
 2. Enable **Developer mode** (toggle in the top-right corner).
 3. Click **Load unpacked**.
-4. Select this directory: `c:\Users\Admin\Desktop\HighP Agent\browser-extension`.
+4. Select this directory: `c:\Users\Admin\Desktop\HighP Agent\desktop-agent\browser-extension` (or click "Open Folder" inside the HighP Desktop Agent app).
 5. The extension is now active and automatically communicates with your HighP Desktop Agent!

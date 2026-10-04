@@ -138,8 +138,9 @@ export class AgentService {
     this.registryFilePath = path.join(baseDir, 'highp-app-registry.json');
     this.loadRegistryFromDisk();
 
-    // Start native Win32 bridge on initialization
+    // Start native Win32 bridge and browser bridge on initialization
     nativeBridge.start();
+    browserBridge.start();
   }
 
   private loadRegistryFromDisk(): void {

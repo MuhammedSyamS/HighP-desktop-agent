@@ -154,6 +154,26 @@
         <span class="queue-status">Syncing automatically</span>
       </div>
 
+      <!-- Browser Companion Extension Setup Card -->
+      <div class="card extension-card">
+        <div class="ext-header">
+          <div class="ext-title-box">
+            <span class="ext-icon">🧩</span>
+            <div>
+              <h4 class="ext-title">Browser Extension Companion</h4>
+              <p class="ext-subtitle">Active tab domain tracking for Chrome, Brave & Edge</p>
+            </div>
+          </div>
+          <button id="openExtFolderBtn" class="btn btn-secondary btn-sm" title="Open extension files in Windows Explorer">📂 Open Folder</button>
+        </div>
+        <div class="ext-guide">
+          <div class="ext-step"><span>1</span> Open <code>chrome://extensions</code> or <code>brave://extensions</code></div>
+          <div class="ext-step"><span>2</span> Toggle <strong>Developer mode</strong> (top right)</div>
+          <div class="ext-step"><span>3</span> Click <strong>Load unpacked</strong> & choose the opened folder</div>
+        </div>
+        <div id="extFolderStatus" class="ext-status-msg hidden"></div>
+      </div>
+
       <!-- Transparency & Privacy Disclosure -->
       <div class="privacy-box">
         <div class="privacy-header">

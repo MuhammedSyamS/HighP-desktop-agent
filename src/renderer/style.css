@@ -415,3 +415,99 @@ input:focus, select:focus {
   font-size: 11px;
   color: #FCA5A5;
 }
+
+/* Extension Companion Card */
+.extension-card {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.9));
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ext-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ext-title-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ext-icon {
+  font-size: 20px;
+}
+
+.ext-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ext-subtitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.btn-secondary {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #A5B4FC;
+  width: auto;
+  white-space: nowrap;
+}
+
+.btn-secondary:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: white;
+}
+
+.ext-guide {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.ext-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ext-step span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ext-step code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #E2E8F0;
+  font-family: monospace;
+}
+
+.ext-status-msg {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--status-active);
+  text-align: center;
+}
+

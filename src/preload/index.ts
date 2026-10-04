@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   startBreak: (reason: string, note?: string) => ipcRenderer.invoke('agent:startBreak', { reason, note }),
   endBreak: () => ipcRenderer.invoke('agent:endBreak'),
   getState: () => ipcRenderer.invoke('agent:getState'),
+  openExtensionFolder: () => ipcRenderer.invoke('agent:openExtensionFolder'),
   onStateUpdate: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('agent:state-update', handler);

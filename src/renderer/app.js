@@ -195,6 +195,28 @@ endBreakBtn.addEventListener('click', async () => {
   await window.agentApi.endBreak();
 });
 
+const openExtFolderBtn = document.getElementById('openExtFolderBtn');
+const extFolderStatus = document.getElementById('extFolderStatus');
+if (openExtFolderBtn) {
+  openExtFolderBtn.addEventListener('click', async () => {
+    try {
+      const res = await window.agentApi.openExtensionFolder();
+      if (extFolderStatus) {
+        extFolderStatus.textContent = '✅ Extension folder opened in Explorer!';
+        extFolderStatus.classList.remove('hidden');
+        setTimeout(() => {
+          extFolderStatus.classList.add('hidden');
+        }, 5000);
+      }
+    } catch (err) {
+      if (extFolderStatus) {
+        extFolderStatus.textContent = '❌ Failed to open folder: ' + err.message;
+        extFolderStatus.classList.remove('hidden');
+      }
+    }
+  });
+}
+
 // Subscribe to state updates from main process
 if (window.agentApi && window.agentApi.onStateUpdate) {
   window.agentApi.onStateUpdate((state) => {

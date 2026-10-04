@@ -34,3 +34,11 @@ if (fs.existsSync(srcBin)) {
   copyDir(srcBin, distBin);
   console.log('[Assets] Native bin files copied to dist/bin.');
 }
+
+const srcExt = path.resolve(__dirname, '../browser-extension');
+const distExt = path.resolve(__dirname, '../dist/browser-extension');
+if (fs.existsSync(srcExt)) {
+  copyDir(srcExt, distExt);
+  console.log('[Assets] Browser extension files copied to dist/browser-extension.');
+}
+

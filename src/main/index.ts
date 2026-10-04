@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, powerMonitor, shell } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { AgentService } from './services/agentService';
 import { ActivityState } from '../shared/enums';
 
@@ -147,6 +148,32 @@ ipcMain.handle('agent:endBreak', async () => {
 
 ipcMain.handle('agent:getState', async () => {
   return agentService.getState();
+});
+
+ipcMain.handle('agent:openExtensionFolder', async () => {
+  let targetPath = '';
+  if (app.isPackaged) {
+    const resPath = path.join(process.resourcesPath, 'browser-extension');
+    if (fs.existsSync(resPath)) {
+      targetPath = resPath;
+    }
+  }
+  if (!targetPath) {
+    const devPath = path.resolve(__dirname, '../../browser-extension');
+    if (fs.existsSync(devPath)) {
+      targetPath = devPath;
+    } else {
+      const distPath = path.resolve(__dirname, '../browser-extension');
+      if (fs.existsSync(distPath)) {
+        targetPath = distPath;
+      }
+    }
+  }
+  if (targetPath) {
+    await shell.openPath(targetPath);
+    return { success: true, path: targetPath };
+  }
+  return { success: false, error: 'Extension directory not found' };
 });
 
 app.whenReady().then(() => {

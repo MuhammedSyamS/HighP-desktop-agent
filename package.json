@@ -34,12 +34,18 @@
     "files": [
       "dist/**/*",
       "bin/**/*",
+      "browser-extension/**/*",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "bin",
         "to": "bin",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "browser-extension",
+        "to": "browser-extension",
         "filter": ["**/*"]
       }
     ],
