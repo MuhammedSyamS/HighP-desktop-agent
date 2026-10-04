@@ -63,15 +63,15 @@ async function main() {
   socket.on('connect', () => {
     console.log('   - Socket.IO Connection:      ESTABLISHED (Socket ID:', socket.id, ')');
   });
-  socket.on('employee:activity_changed', (data) => {
+  socket.on('employee:activity_changed', (data: any) => {
     console.log('   - ⚡ Realtime Event Received: [employee:activity_changed]', data.currentApplication);
     receivedRealtimeEvents.push(data);
   });
-  socket.on('employee:status_changed', (data) => {
+  socket.on('employee:status_changed', (data: any) => {
     console.log('   - ⚡ Realtime Event Received: [employee:status_changed]', data.status, '| App:', data.currentApplication);
     receivedRealtimeEvents.push(data);
   });
-  socket.on('activity:ingested', (data) => {
+  socket.on('activity:ingested', (data: any) => {
     console.log('   - ⚡ Realtime Event Received: [activity:ingested]', data.count || 'events synced');
     receivedRealtimeEvents.push(data);
   });
