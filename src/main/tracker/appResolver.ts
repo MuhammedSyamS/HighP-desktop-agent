@@ -98,8 +98,7 @@ export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
   { name: 'Google Analytics', executableNames: ['googleanalytics.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Meta Business Suite', executableNames: ['metabusiness.exe', 'meta business suite.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },
 
-  // File Management
-  { name: 'Windows File Explorer', executableNames: ['explorer.exe'], category: 'File Management', tracked: true, ignored: false, isSystemApp: false },
+  // File Management (Note: explorer.exe is resolved dynamically via windowTitle to separate Desktop Shell from Folders)
   { name: 'OneDrive', executableNames: ['onedrive.exe'], category: 'File Management', tracked: true, ignored: false, isSystemApp: false },
 
   // Media
@@ -132,7 +131,8 @@ export const resolveApplication = (
   executable: string,
   executablePathOrTitle?: string,
   processId: number = 0,
-  dynamicRegistry: TrackedApplicationEntry[] = []
+  dynamicRegistry: TrackedApplicationEntry[] = [],
+  windowTitle?: string
 ): ResolvedApplication & ResolvedApp => {
   const rawExe = (executable || '').trim();
   const normalizedKey = normalizeExeKey(rawExe);
@@ -160,6 +160,65 @@ export const resolveApplication = (
       isRecognized: false,
       confidence: 'high'
     };
+  }
+
+  // 1b. Windows Desktop Shell vs actual File Explorer folder
+  // explorer.exe owns the desktop ("Program Manager"), taskbar, Alt-Tab switcher, etc.
+  // ShellExperienceHost, StartMenu, SearchHost are also Windows OS shell background.
+  if (
+    normalizedKey === 'explorer.exe' ||
+    normalizedKey === 'shellexperiencehost.exe' ||
+    normalizedKey === 'startmenuexperiencehost.exe' ||
+    normalizedKey === 'searchhost.exe' ||
+    normalizedKey === 'lockapp.exe'
+  ) {
+    const rawTitle = (windowTitle || (!executablePathOrTitle?.includes('\\') ? executablePathOrTitle : '') || '').trim();
+    const lowerTitle = rawTitle.toLowerCase();
+    const isShellBackground =
+      normalizedKey !== 'explorer.exe' ||
+      !lowerTitle ||
+      lowerTitle === 'program manager' ||
+      lowerTitle === 'task switching' ||
+      lowerTitle === 'taskbar' ||
+      lowerTitle === 'running applications' ||
+      lowerTitle.includes('windows shell') ||
+      lowerTitle.includes('windows input experience');
+
+    if (isShellBackground) {
+      return {
+        applicationId: undefined,
+        name: 'Windows Desktop',
+        applicationName: 'Windows Desktop',
+        executableName: normalizedKey,
+        processName: normalizedKey,
+        executablePath: normalizedPath,
+        processId,
+        category: 'System',
+        trackingState: 'IGNORED',
+        tracked: false,
+        ignored: true,
+        isUnknown: false,
+        isRecognized: true,
+        confidence: 'high'
+      };
+    } else {
+      return {
+        applicationId: undefined,
+        name: 'Windows File Explorer',
+        applicationName: 'Windows File Explorer',
+        executableName: 'explorer.exe',
+        processName: 'explorer.exe',
+        executablePath: normalizedPath,
+        processId,
+        category: 'File Management',
+        trackingState: 'TRACKED',
+        tracked: true,
+        ignored: false,
+        isUnknown: false,
+        isRecognized: true,
+        confidence: 'high'
+      };
+    }
   }
 
   // 2. Exact Path Match in Dynamic Registry

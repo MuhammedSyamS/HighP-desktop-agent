@@ -590,7 +590,8 @@ export class AgentService {
         snapshot.executable,
         snapshot.executablePath,
         snapshot.processId,
-        this.dynamicRegistry
+        this.dynamicRegistry,
+        snapshot.windowTitle
       );
 
       const isAgentSelf = this.isActualAgentProcess(snapshot);
@@ -617,6 +618,14 @@ export class AgentService {
           this.sendHeartbeat().catch(() => {});
         }
       } else {
+        // If focus momentarily shifts to Windows Desktop (Program Manager, taskbar, Alt-Tab),
+        // do not prematurely cut off or replace the active tracked work application (e.g. Antigravity IDE).
+        const isShellDesktop = resolved.name === 'Windows Desktop';
+        if (isShellDesktop && this.currentAppIsTracked && this.currentApp !== 'Unknown Application') {
+          // Keep active tracked application intact during momentary shell desktop clicks
+          return;
+        }
+
         const isSameApplication =
           resolved.name === this.currentApp &&
           resolved.executableName.toLowerCase() === (this.currentProcess || '').toLowerCase() &&

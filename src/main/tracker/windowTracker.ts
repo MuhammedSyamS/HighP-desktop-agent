@@ -21,7 +21,7 @@ export class WindowTracker {
 
   public async getActiveWindow(): Promise<ActiveWindowInfo> {
     const raw = nativeBridge.getSnapshot();
-    const resolved = resolveApplication(raw.executable || '', raw.executablePath, raw.processId, this.dynamicRegistry);
+    const resolved = resolveApplication(raw.executable || '', raw.executablePath, raw.processId, this.dynamicRegistry, raw.windowTitle);
     return {
       applicationName: resolved.name,
       processName: raw.executable || 'unknown.exe',
