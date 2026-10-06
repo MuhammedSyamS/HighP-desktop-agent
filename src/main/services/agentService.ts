@@ -356,13 +356,13 @@ export class AgentService {
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
-      this.activeSeconds = 0;
-      this.idleSeconds = 0;
-      this.breakSeconds = 0;
+      this.activeSeconds = res.data.data?.activeSeconds || 0;
+      this.idleSeconds = res.data.data?.idleSeconds || 0;
+      this.breakSeconds = res.data.data?.breakSeconds || 0;
       this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
-      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (New session started from 0)`);
+      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (Daily session active: active=${this.activeSeconds}s, idle=${this.idleSeconds}s, break=${this.breakSeconds}s)`);
       this.notifyStateChange();
     } catch (err: any) {
       console.warn('[AgentService] Start session online failed, using offline session:', err.message);
