@@ -11,8 +11,16 @@ const cscPath = 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
 const srcFile = path.resolve(__dirname, '../src/native/HighPTelemetryNative.cs');
 const outFile = path.resolve(__dirname, '../bin/HighPTelemetryNative.exe');
 
+if (process.platform !== 'win32') {
+  console.log(`[Native Build] Non-Windows platform (${process.platform}): Skipping C# native bridge compilation.`);
+  process.exit(0);
+}
+
 if (!fs.existsSync(cscPath)) {
-  console.error(`[Native Build] csc.exe not found at ${cscPath}`);
+  console.warn(`[Native Build] Notice: csc.exe not found at ${cscPath}. If HighPTelemetryNative.exe already exists, build will continue.`);
+  if (fs.existsSync(outFile)) {
+    process.exit(0);
+  }
   process.exit(1);
 }
 

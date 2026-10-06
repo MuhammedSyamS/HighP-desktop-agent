@@ -24,6 +24,15 @@ powerMonitor.on('resume', () => agentService.handleSystemResume());
 powerMonitor.on('lock-screen', () => agentService.handleScreenLock());
 powerMonitor.on('unlock-screen', () => agentService.handleScreenUnlock());
 
+// Graceful shutdown: flush open intervals on normal quit, restart, or Windows logout/shutdown
+app.on('before-quit', () => {
+  agentService.handleAppShutdown();
+});
+
+app.on('will-quit', () => {
+  agentService.handleAppShutdown();
+});
+
 let isQuitting = false;
 
 function createWindow() {
@@ -46,7 +55,7 @@ function createWindow() {
   mainWindow.loadFile(rendererPath);
 
   mainWindow.on('close', (event) => {
-    // Minimize to tray instead of quitting if active
+    // Minimize to tray instead of quitting if active work session is running
     if (agentService.getState().isWorking && !isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
@@ -55,7 +64,6 @@ function createWindow() {
 }
 
 function createTray() {
-  // Simple transparent 16x16 icon data
   const iconBase64 =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA7SURBVDhPY/wPBAwUACYGhgEGBgaG//8ZGBgY/jMwMDA8wKOBDAaA4BgNGBgYGBgY/mPDj1E3DNIN/wEArXgOD2z1FqAAAAAASUVORK5CYII=';
   const icon = nativeImage.createFromDataURL(iconBase64);
@@ -64,6 +72,8 @@ function createTray() {
 
   const updateContextMenu = () => {
     const state = agentService.getState();
+    const loginSettings = app.getLoginItemSettings();
+
     const contextMenu = Menu.buildFromTemplate([
       { label: `Status: ${state.currentStatus}`, enabled: false },
       { label: `App: ${state.currentApplication}`, enabled: false },
@@ -85,6 +95,17 @@ function createTray() {
       },
       { type: 'separator' },
       {
+        label: 'Start with Windows',
+        type: 'checkbox',
+        checked: loginSettings.openAtLogin,
+        click: (menuItem) => {
+          app.setLoginItemSettings({
+            openAtLogin: menuItem.checked,
+            path: process.execPath
+          });
+        }
+      },
+      {
         label: 'Open Dashboard',
         click: () => {
           mainWindow?.show();
@@ -95,6 +116,7 @@ function createTray() {
         label: 'Quit',
         click: async () => {
           isQuitting = true;
+          agentService.handleAppShutdown();
           await agentService.logout();
           app.quit();
         }
@@ -148,6 +170,19 @@ ipcMain.handle('agent:endBreak', async () => {
 
 ipcMain.handle('agent:getState', async () => {
   return agentService.getState();
+});
+
+ipcMain.handle('agent:getAutostart', async () => {
+  const settings = app.getLoginItemSettings();
+  return { openAtLogin: settings.openAtLogin };
+});
+
+ipcMain.handle('agent:setAutostart', async (_e, { enabled }) => {
+  app.setLoginItemSettings({
+    openAtLogin: Boolean(enabled),
+    path: process.execPath
+  });
+  return { openAtLogin: Boolean(enabled) };
 });
 
 ipcMain.handle('agent:openExtensionFolder', async () => {

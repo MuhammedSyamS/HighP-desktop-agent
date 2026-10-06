@@ -6,12 +6,20 @@
   "main": "./dist/main/index.js",
   "scripts": {
     "build:native": "node scripts/build-native.js",
+    "typecheck": "tsc --noEmit",
     "build": "npm run build:native && tsc && npm run copy-assets",
     "copy-assets": "node scripts/copy-assets.js",
     "telemetry:diagnose": "ts-node src/scripts/diagnose.ts",
+    "test": "ts-node src/scripts/test-cross-platform.ts",
+    "test:scenarios": "ts-node src/scripts/test-tracking-scenarios.ts",
+    "test:endurance": "ts-node src/scripts/test-endurance.ts",
+    "tracking:reconcile": "ts-node src/scripts/tracking-reconcile.ts",
+    "tracking:audit": "ts-node src/scripts/tracking-audit.ts",
+    "verify:production-tracking": "ts-node src/scripts/verify-production-tracking.ts",
     "start": "electron .",
     "dev": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --win --publish never"
+    "dist": "npm run build && electron-builder --win --publish never",
+    "dist:all": "npm run build && electron-builder -mwl --publish never"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -22,6 +30,7 @@
     "@types/uuid": "^10.0.0",
     "electron": "33.2.1",
     "electron-builder": "^25.1.8",
+    "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   },
   "build": {
@@ -33,16 +42,10 @@
     },
     "files": [
       "dist/**/*",
-      "bin/**/*",
       "browser-extension/**/*",
       "package.json"
     ],
     "extraResources": [
-      {
-        "from": "bin",
-        "to": "bin",
-        "filter": ["**/*"]
-      },
       {
         "from": "browser-extension",
         "to": "browser-extension",
@@ -51,9 +54,48 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "bin",
+          "to": "bin",
+          "filter": ["**/*"]
+        }
       ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64", "universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64", "universal"]
+        }
+      ],
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "Office"
     },
     "nsis": {
       "oneClick": true,

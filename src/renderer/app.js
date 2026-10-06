@@ -26,6 +26,21 @@ const offlineQueueBar = document.getElementById('offlineQueueBar');
 const queueCount = document.getElementById('queueCount');
 
 // Diagnostics elements
+const diagPlatformBadge = document.getElementById('diagPlatformBadge');
+const diagPlatform = document.getElementById('diagPlatform');
+const diagArch = document.getElementById('diagArch');
+const diagVersion = document.getElementById('diagVersion');
+const diagProvider = document.getElementById('diagProvider');
+const permissionWarningBanner = document.getElementById('permissionWarningBanner');
+const permissionWarningText = document.getElementById('permissionWarningText');
+const capForeground = document.getElementById('capForeground');
+const capWindowId = document.getElementById('capWindowId');
+const capWindowTitle = document.getElementById('capWindowTitle');
+const capIdle = document.getElementById('capIdle');
+const capLock = document.getElementById('capLock');
+const capSleep = document.getElementById('capSleep');
+const capBrowser = document.getElementById('capBrowser');
+
 const diagConn = document.getElementById('diagConn');
 const diagServer = document.getElementById('diagServer');
 const diagDevice = document.getElementById('diagDevice');
@@ -38,6 +53,24 @@ const diagHeartbeat = document.getElementById('diagHeartbeat');
 const diagSyncPill = document.getElementById('diagSyncPill');
 const telemetryErrorAlert = document.getElementById('telemetryErrorAlert');
 const telemetryErrorText = document.getElementById('telemetryErrorText');
+
+function renderCapabilityTag(el, status) {
+  if (!el) return;
+  el.className = 'cap-tag';
+  if (status === 'SUPPORTED' || status === 'YES') {
+    el.classList.add('pass');
+    el.textContent = 'YES';
+  } else if (status === 'PARTIALLY_SUPPORTED' || status === 'LIMITED') {
+    el.classList.add('limited');
+    el.textContent = 'LIMITED';
+  } else if (status === 'REQUIRES_PERMISSION') {
+    el.classList.add('perm');
+    el.textContent = 'REQUIRES PERMISSION';
+  } else {
+    el.classList.add('unsupported');
+    el.textContent = 'UNSUPPORTED';
+  }
+}
 
 function formatSeconds(sec) {
   const h = Math.floor(sec / 3600);
@@ -81,14 +114,55 @@ function updateUI(state) {
       currentAppName.textContent = 'Telemetry unavailable';
     }
 
-    // Diagnostics Panel (Requirement #45)
+    // Diagnostics Panel (Requirements #5 & #20)
+    const platformDisplay = state.platform === 'win32' ? 'Windows' : (state.platform === 'darwin' ? 'macOS' : (state.platform === 'linux' ? 'Linux' : (state.platform || 'Desktop')));
+    const archDisplay = state.architecture || 'x64';
+    if (diagPlatformBadge) diagPlatformBadge.textContent = `${platformDisplay} (${archDisplay})`;
+    if (diagPlatform) diagPlatform.textContent = platformDisplay;
+    if (diagArch) diagArch.textContent = archDisplay;
+    if (diagProvider) {
+      if (state.platform === 'win32') {
+        diagProvider.textContent = state.health?.nativeTelemetryConnected ? 'Connected (Win32 Hook)' : 'Standby / Polling';
+      } else if (state.platform === 'darwin') {
+        diagProvider.textContent = 'Active (NSWorkspace / ioreg)';
+      } else {
+        diagProvider.textContent = 'Active (X11 / Wayland)';
+      }
+    }
+
+    // Permission Warnings (e.g. macOS Accessibility or Linux Wayland)
+    const perms = state.permissions || {};
+    const hasPermissionIssue = perms.accessibility === 'DENIED' || perms.accessibility === 'REQUIRES_PERMISSION';
+    if (permissionWarningBanner) {
+      if (hasPermissionIssue) {
+        permissionWarningBanner.classList.remove('hidden');
+        if (permissionWarningText) {
+          permissionWarningText.textContent = state.platform === 'darwin'
+            ? 'macOS Accessibility permission is required to detect window titles. Enable in System Settings > Privacy & Security > Accessibility.'
+            : 'Wayland security isolation restricts window title inspection. Wayland titles will display as unsupported.';
+        }
+      } else {
+        permissionWarningBanner.classList.add('hidden');
+      }
+    }
+
+    // Capability Matrix
+    const caps = state.capabilities || {};
+    renderCapabilityTag(capForeground, caps.foregroundApplication || 'YES');
+    renderCapabilityTag(capWindowId, caps.windowIdentity || 'YES');
+    renderCapabilityTag(capWindowTitle, caps.windowTitle || 'YES');
+    renderCapabilityTag(capIdle, caps.idleDetection || 'YES');
+    renderCapabilityTag(capLock, caps.lockDetection || 'YES');
+    renderCapabilityTag(capSleep, caps.sleepDetection || 'YES');
+    renderCapabilityTag(capBrowser, caps.browserTracking || 'YES');
+
     if (diagConn) diagConn.textContent = state.isOnline ? 'Connected' : 'Disconnected (Offline)';
     if (diagServer) diagServer.textContent = state.isOnline ? 'Reachable' : 'Unreachable';
-    if (diagDevice) diagDevice.textContent = state.deviceId ? `Registered (${state.deviceId})` : 'Unregistered';
-    if (diagSession) diagSession.textContent = state.sessionId ? `Active (${state.sessionId.slice(0, 8)}...)` : 'None';
+    if (diagDevice) diagDevice.textContent = state.deviceId ? `Registered (${state.deviceId.slice(0, 8)}...)` : 'Unregistered';
+    if (diagSession) diagSession.textContent = state.sessionId ? `Active (${state.sessionId.slice(0, 8)}...)` : 'No Active Session';
     if (diagApp) diagApp.textContent = state.currentApplication || 'None';
     if (diagStatus) diagStatus.textContent = state.currentStatus;
-    if (diagQueue) diagQueue.textContent = String(state.queuedEventsCount || 0);
+    if (diagQueue) diagQueue.textContent = state.queuedEventsCount ? `QUEUING (${state.queuedEventsCount})` : 'HEALTHY (0)';
     if (diagSync) diagSync.textContent = state.lastSyncTime || 'Pending';
     if (diagHeartbeat) diagHeartbeat.textContent = state.lastHeartbeatTime || 'Pending';
 

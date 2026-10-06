@@ -4,21 +4,28 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { nativeBridge, NativeTelemetryResult } from '../tracker/nativeBridge';
 import {
-  resolveApplication,
   TrackedApplicationEntry,
-  DEFAULT_REGISTRY_ENTRIES
+  DEFAULT_REGISTRY_ENTRIES,
+  mergeRegistries
 } from '../tracker/appResolver';
-import { windowTracker } from '../tracker/windowTracker';
-import { OfflineQueue, QueuedActivityItem } from '../queue/offlineQueue';
+import { OfflineQueue, DurableTrackingEvent } from '../queue/offlineQueue';
 import { ActivityState, ActivityEventType, BreakReason } from '../../shared/enums';
-import { browserBridge } from '../browser/browserBridge';
+import { browserBridge, ActiveWebsiteInfo } from '../browser/browserBridge';
+import { TrackingEngine, TrackingEngineHealth } from '../tracker/trackingEngine';
+import {
+  ITelemetryProvider,
+  PlatformCapabilities,
+  PlatformPermissions,
+  NormalizedTelemetryObservation
+} from '../tracker/telemetryProvider';
+import { createTelemetryProvider } from '../tracker/providers/telemetryProviderFactory';
 
 export interface AgentConfig {
   apiUrl: string;
   idleThresholdMinutes: number;
   heartbeatIntervalSeconds: number;
+  debugLogging: boolean;
 }
 
 export interface CurrentApplicationInfo {
@@ -28,7 +35,7 @@ export interface CurrentApplicationInfo {
   category: string;
   trackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN';
   processId: number;
-  hwnd: string | number;
+  hwnd?: string | number;
   windowTitle?: string;
   startedAt: string;
   lastSeenAt: string;
@@ -55,15 +62,22 @@ export interface AgentState {
   lastSyncTime?: string;
   telemetryError?: string;
   currentWebsite?: { domain: string } | null;
+  health?: TrackingEngineHealth;
+  platform?: string;
+  architecture?: string;
+  capabilities?: PlatformCapabilities;
+  permissions?: PlatformPermissions;
 }
 
 export class AgentService {
   private offlineQueue = new OfflineQueue();
+  private trackingEngine: TrackingEngine;
 
   private config: AgentConfig = {
     apiUrl: process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com',
     idleThresholdMinutes: 1,
-    heartbeatIntervalSeconds: 15
+    heartbeatIntervalSeconds: 15,
+    debugLogging: true
   };
 
   private token: string | null = null;
@@ -74,39 +88,19 @@ export class AgentService {
 
   private isWorking = false;
   private isOnBreak = false;
-  private currentStatus: ActivityState = ActivityState.OFFLINE;
 
-  // Active tracking state
-  private previousHwnd: string = '0';
-  private previousPid: number = 0;
-  private previousExecutable: string = '';
-  private currentApp: string = 'Unknown Application';
-  private currentProcess: string = 'unknown.exe';
-  private currentCategory: string = 'Other';
-  private currentExecutablePath: string = '';
-  private currentWindowTitle: string = '';
-  private currentAppFocusStartTime: Date = new Date();
-  private currentAppStartTime: Date = new Date();
-  private currentAppStartMono: bigint = process.hrtime.bigint();
-  private currentAppIsTracked = false;
-  private currentAppIsIgnored = false;
-  private currentAppTrackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN' = 'TRACKED';
-  private currentApplicationState: CurrentApplicationInfo | null = null;
-  private currentWebsiteDomain: string | null = null;
-  private currentWebsiteStartTime: Date = new Date();
-  private currentWebsiteStartMono: bigint = process.hrtime.bigint();
-
-  // Application Registry
-  private dynamicRegistry: TrackedApplicationEntry[] = [];
-  private registryVersion = 0;
-  private registryFilePath: string;
-  private reportedUnknownExes: Set<string> = new Set();
-  private registrySyncTimer: NodeJS.Timeout | null = null;
-
-  // Visual local display counters (synced with server)
+  // Visual display counters (derived and synchronized)
   private activeSeconds = 0;
   private idleSeconds = 0;
   private breakSeconds = 0;
+
+  // Application registry
+  private dynamicRegistry: TrackedApplicationEntry[] = [];
+  private registryVersion = 0;
+  private registryFilePath: string;
+  private crashRecoveryFilePath: string;
+  private reportedUnknownExes: Set<string> = new Set();
+  private registrySyncTimer: NodeJS.Timeout | null = null;
 
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private trackingTimer: NodeJS.Timeout | null = null;
@@ -119,9 +113,9 @@ export class AgentService {
 
   private onStateChangeCallback?: (state: AgentState) => void;
 
-  constructor() {
-    this.deviceIdentifier = `DEV-${os.hostname().toUpperCase()}-${os.platform().toUpperCase()}`;
+  private telemetryProvider: ITelemetryProvider;
 
+  constructor() {
     let baseDir = '.';
     try {
       if (app && app.getPath) {
@@ -136,10 +130,54 @@ export class AgentService {
       } catch {}
     }
     this.registryFilePath = path.join(baseDir, 'highp-app-registry.json');
-    this.loadRegistryFromDisk();
+    this.crashRecoveryFilePath = path.join(baseDir, 'highp-crash-recovery.json');
 
-    // Start native Win32 bridge and browser bridge on initialization
-    nativeBridge.start();
+    // 1. Stable, persistent Device Identity across restarts (Requirement 8)
+    const idFile = path.join(baseDir, 'highp-device-identity.json');
+    if (fs.existsSync(idFile)) {
+      try {
+        const idData = JSON.parse(fs.readFileSync(idFile, 'utf-8'));
+        this.deviceIdentifier = idData.deviceId || `device-${uuidv4()}`;
+      } catch {
+        this.deviceIdentifier = `device-${uuidv4()}`;
+      }
+    } else {
+      this.deviceIdentifier = `device-${uuidv4()}`;
+      try {
+        fs.writeFileSync(idFile, JSON.stringify({ deviceId: this.deviceIdentifier, createdAt: new Date().toISOString() }));
+      } catch {}
+    }
+
+    // 2. Cross-platform telemetry provider
+    this.telemetryProvider = createTelemetryProvider();
+
+    this.trackingEngine = new TrackingEngine(this.offlineQueue);
+    this.trackingEngine.setDeviceId(this.deviceIdentifier);
+    this.trackingEngine.setPlatformInfo(this.telemetryProvider.platform, this.telemetryProvider.architecture);
+
+    this.loadRegistryFromDisk();
+    this.recoverPreviousCrashInterval();
+
+    // Hook trackingEngine to state changes
+    this.trackingEngine.setOnStateChange((_state, _app, _domain) => {
+      this.saveCrashRecoveryCheckpoint();
+      this.notifyStateChange();
+    });
+
+    // Wire up event-driven cross-platform observations
+    this.telemetryProvider.setOnObservation((obs) => {
+      this.trackingEngine.processObservation(obs);
+    });
+
+    // Wire up event-driven Browser extension observations
+    browserBridge.setOnWebsiteEvent((report) => {
+      this.trackingEngine.processBrowserObservation(report);
+    });
+
+    // Start native provider and browser extension bridge
+    this.telemetryProvider.start().catch((err: any) => {
+      console.warn('[AgentService] Telemetry provider start warning:', err.message);
+    });
     browserBridge.start();
   }
 
@@ -150,20 +188,14 @@ export class AgentService {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.applications)) {
           this.registryVersion = parsed.version || 0;
-          this.dynamicRegistry = parsed.applications;
-          windowTracker.setDynamicRegistry(this.dynamicRegistry);
-          return;
-        } else if (Array.isArray(parsed) && parsed.length > 0) {
-          this.dynamicRegistry = parsed;
-          windowTracker.setDynamicRegistry(this.dynamicRegistry);
+          this.dynamicRegistry = mergeRegistries(DEFAULT_REGISTRY_ENTRIES, parsed.applications);
+          this.trackingEngine.setDynamicRegistry(this.dynamicRegistry);
           return;
         }
       }
-    } catch (e: any) {
-      console.warn('[AgentService] Could not read registry from disk, using defaults:', e.message);
-    }
+    } catch {}
     this.dynamicRegistry = [...DEFAULT_REGISTRY_ENTRIES];
-    windowTracker.setDynamicRegistry(this.dynamicRegistry);
+    this.trackingEngine.setDynamicRegistry(this.dynamicRegistry);
   }
 
   private saveRegistryToDisk(): void {
@@ -173,9 +205,7 @@ export class AgentService {
         applications: this.dynamicRegistry
       };
       fs.writeFileSync(this.registryFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-    } catch (e: any) {
-      console.warn('[AgentService] Could not save registry to disk:', e.message);
-    }
+    } catch {}
   }
 
   public async syncApplicationRegistry(): Promise<void> {
@@ -186,37 +216,132 @@ export class AgentService {
         timeout: 5000
       });
       if (res.data?.data) {
-        if (res.data.data.upToDate) {
-          return;
-        }
+        if (res.data.data.upToDate) return;
         if (Array.isArray(res.data.data.applications)) {
           this.registryVersion = res.data.data.version || Date.now();
-          this.dynamicRegistry = res.data.data.applications;
-          windowTracker.setDynamicRegistry(this.dynamicRegistry);
+          this.dynamicRegistry = mergeRegistries(DEFAULT_REGISTRY_ENTRIES, res.data.data.applications);
+          this.trackingEngine.setDynamicRegistry(this.dynamicRegistry);
           this.saveRegistryToDisk();
-          console.log(`[AgentService] Application Registry updated to version ${this.registryVersion} (${this.dynamicRegistry.length} apps)`);
         }
       }
-    } catch (err: any) {
-      console.warn('[AgentService] Registry sync warning (using cached registry):', err.message);
+    } catch {}
+  }
+
+  private recoverPreviousCrashInterval(): void {
+    try {
+      if (fs.existsSync(this.crashRecoveryFilePath)) {
+        const raw = fs.readFileSync(this.crashRecoveryFilePath, 'utf-8');
+        const record = JSON.parse(raw);
+        if (record && record.sessionId && record.startedAt) {
+          const startTime = new Date(record.startedAt).getTime();
+          const checkpointTime = record.lastCheckpointAt ? new Date(record.lastCheckpointAt).getTime() : startTime;
+          const recoveredSec = Math.max(0, Math.min(86400, Math.round((checkpointTime - startTime) / 1000)));
+
+          if (recoveredSec > 0 && record.applicationName) {
+            this.offlineQueue.enqueueEvent({
+              eventId: record.appFocusEventId || uuidv4(),
+              sessionId: record.sessionId,
+              deviceId: this.deviceIdentifier,
+              eventType: ActivityEventType.APP_FOCUS_END,
+              timestamp: new Date(checkpointTime).toISOString(),
+              startedAt: record.startedAt,
+              endedAt: new Date(checkpointTime).toISOString(),
+              wallClockStart: record.startedAt,
+              wallClockEnd: new Date(checkpointTime).toISOString(),
+              durationMs: recoveredSec * 1000,
+              durationSeconds: recoveredSec,
+              clockSource: 'WALL_CLOCK_FALLBACK',
+              application: {
+                name: record.applicationName,
+                executable: record.processName,
+                executablePath: record.executablePath,
+                pid: record.pid,
+                hwnd: record.hwnd,
+                windowTitle: record.windowTitle,
+                category: record.category
+              },
+              process: record.processName,
+              pid: record.pid,
+              hwnd: record.hwnd
+            });
+          }
+
+          if (record.domain && recoveredSec > 0) {
+            this.offlineQueue.enqueueEvent({
+              eventId: record.websiteFocusEventId || uuidv4(),
+              sessionId: record.sessionId,
+              deviceId: this.deviceIdentifier,
+              eventType: ActivityEventType.WEBSITE_FOCUS_END,
+              timestamp: new Date(checkpointTime).toISOString(),
+              startedAt: record.startedAt,
+              endedAt: new Date(checkpointTime).toISOString(),
+              wallClockStart: record.startedAt,
+              wallClockEnd: new Date(checkpointTime).toISOString(),
+              durationMs: recoveredSec * 1000,
+              durationSeconds: recoveredSec,
+              clockSource: 'WALL_CLOCK_FALLBACK',
+              website: {
+                domain: record.domain,
+                browser: record.applicationName
+              }
+            });
+          }
+
+          // Explicitly close old crashed session (Requirement 11)
+          this.offlineQueue.enqueueEvent({
+            eventId: `recovery-sess-end-${record.sessionId}`,
+            sessionId: record.sessionId,
+            deviceId: this.deviceIdentifier,
+            eventType: ActivityEventType.SESSION_END,
+            timestamp: new Date(checkpointTime).toISOString(),
+            startedAt: record.startedAt,
+            endedAt: new Date(checkpointTime).toISOString(),
+            durationSeconds: 0,
+            durationMs: 0,
+            clockSource: 'WALL_CLOCK_FALLBACK'
+          });
+        }
+        fs.unlinkSync(this.crashRecoveryFilePath);
+      }
+    } catch {
+      try {
+        if (fs.existsSync(this.crashRecoveryFilePath)) fs.unlinkSync(this.crashRecoveryFilePath);
+      } catch {}
     }
   }
 
-  private async reportUnknownApp(executable: string, executablePath?: string, windowTitle?: string): Promise<void> {
-    const key = (executable || '').trim().toLowerCase();
-    if (!this.token || !key || this.reportedUnknownExes.has(key)) return;
-    this.reportedUnknownExes.add(key);
+  private saveCrashRecoveryCheckpoint(): void {
+    if (!this.isWorking || !this.currentSessionId || this.trackingEngine.getCurrentState() !== ActivityState.ACTIVE) {
+      try {
+        if (fs.existsSync(this.crashRecoveryFilePath)) fs.unlinkSync(this.crashRecoveryFilePath);
+      } catch {}
+      return;
+    }
 
     try {
-      await axios.post(
-        `${this.config.apiUrl}/api/agent/applications/discovered`,
-        {
-          executableName: executable,
-          executablePath: executablePath || '',
-          windowTitle: windowTitle || ''
-        },
-        { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
-      );
+      const currentApp = this.trackingEngine.getCurrentApp();
+      const currentWeb = this.trackingEngine.getCurrentWebsite();
+      if (!currentApp) return;
+
+      const record = {
+        sessionId: this.currentSessionId,
+        agentInstanceId: this.trackingEngine.getAgentInstanceId(),
+        appFocusEventId: currentApp.eventId,
+        websiteFocusEventId: currentWeb?.eventId,
+        applicationName: currentApp.name,
+        processName: currentApp.executable,
+        executablePath: currentApp.executablePath,
+        pid: currentApp.pid,
+        hwnd: currentApp.hwnd,
+        windowTitle: currentApp.windowTitle,
+        category: currentApp.category,
+        domain: currentWeb?.domain,
+        startedAt: currentApp.startedAt.toISOString(),
+        lastCheckpointAt: new Date().toISOString()
+      };
+      const tempPath = `${this.crashRecoveryFilePath}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(record, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.crashRecoveryFilePath);
     } catch {}
   }
 
@@ -225,13 +350,30 @@ export class AgentService {
   }
 
   public getState(): AgentState {
+    const currentApp = this.trackingEngine.getCurrentApp();
+    const currentWeb = this.trackingEngine.getCurrentWebsite();
+    const currentState = this.trackingEngine.getCurrentState();
+
+    const appInfo: CurrentApplicationInfo | null = currentApp ? {
+      name: currentApp.name,
+      executableName: currentApp.executable,
+      executablePath: currentApp.executablePath || '',
+      category: currentApp.category,
+      trackingState: currentApp.trackingState,
+      processId: currentApp.pid,
+      hwnd: currentApp.hwnd,
+      windowTitle: currentApp.windowTitle,
+      startedAt: currentApp.startedAt.toISOString(),
+      lastSeenAt: new Date().toISOString()
+    } : null;
+
     return {
       isLoggedIn: !!this.token,
       isWorking: this.isWorking,
       isOnBreak: this.isOnBreak,
-      currentStatus: this.currentStatus,
-      currentApplication: this.currentApp,
-      currentApplicationInfo: this.currentApplicationState,
+      currentStatus: currentState,
+      currentApplication: currentApp?.name || (currentState === ActivityState.IDLE ? 'System Idle' : 'None'),
+      currentApplicationInfo: appInfo,
       activeSeconds: this.activeSeconds,
       idleSeconds: this.idleSeconds,
       breakSeconds: this.breakSeconds,
@@ -245,7 +387,12 @@ export class AgentService {
       lastHeartbeatTime: this.lastHeartbeatTime,
       lastSyncTime: this.lastSyncTime,
       telemetryError: this.telemetryError,
-      currentWebsite: this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null
+      currentWebsite: currentWeb ? { domain: currentWeb.domain } : null,
+      health: this.trackingEngine.getHealth(),
+      platform: this.telemetryProvider.platform,
+      architecture: this.telemetryProvider.architecture,
+      capabilities: this.telemetryProvider.getCapabilities(),
+      permissions: this.telemetryProvider.getPermissions()
     };
   }
 
@@ -272,6 +419,7 @@ export class AgentService {
         if (this.company?.config) {
           if (this.company.config.idleThresholdMinutes) {
             this.config.idleThresholdMinutes = this.company.config.idleThresholdMinutes;
+            this.trackingEngine.setIdleThreshold(this.config.idleThresholdMinutes * 60);
           }
           if (this.company.config.heartbeatIntervalSeconds) {
             this.config.heartbeatIntervalSeconds = this.company.config.heartbeatIntervalSeconds;
@@ -281,7 +429,6 @@ export class AgentService {
         await this.registerDevice();
         await this.syncApplicationRegistry();
 
-        // Section 18: Resume existing work session if one is already open on backend
         try {
           const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
             headers: { Authorization: `Bearer ${this.token}` }
@@ -290,12 +437,12 @@ export class AgentService {
             this.currentSessionId = sessRes.data.data._id;
             this.isWorking = true;
             this.isOnBreak = false;
-            this.currentStatus = ActivityState.ACTIVE;
-            console.log(`[WORK_SESSION]\nstatus=OPEN (Resumed existing session: ${this.currentSessionId})`);
+            this.activeSeconds = sessRes.data.data.activeSeconds || 0;
+            this.idleSeconds = sessRes.data.data.idleSeconds || 0;
+            this.breakSeconds = sessRes.data.data.breakSeconds || 0;
+            this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
           }
-        } catch (sessErr: any) {
-          console.warn('[AgentService] Could not check open session:', sessErr.message);
-        }
+        } catch {}
 
         this.startLoops();
         this.notifyStateChange();
@@ -309,13 +456,10 @@ export class AgentService {
   }
 
   public async logout(): Promise<void> {
-    // Note: Quitting or logging out of the desktop agent must NOT terminate an active work session.
-    // The work session remains OPEN until the employee explicitly clicks "End Work".
     this.stopLoops();
     this.token = null;
     this.user = null;
     this.company = null;
-    this.currentStatus = ActivityState.OFFLINE;
     this.notifyStateChange();
   }
 
@@ -327,24 +471,27 @@ export class AgentService {
         {
           deviceIdentifier: this.deviceIdentifier,
           deviceName: os.hostname(),
+          platform: this.telemetryProvider.platform,
+          architecture: this.telemetryProvider.architecture,
           osInfo: {
-            platform: os.platform(),
+            platform: this.telemetryProvider.platform,
             release: os.release(),
-            arch: os.arch(),
+            arch: this.telemetryProvider.architecture,
             hostname: os.hostname()
           },
-          agentVersion: '1.0.0'
+          capabilities: this.telemetryProvider.getCapabilities(),
+          permissions: this.telemetryProvider.getPermissions(),
+          agentVersion: '2.0.0'
         },
         { headers: { Authorization: `Bearer ${this.token}` } }
       );
       this.isOnline = true;
-    } catch (err: any) {
-      console.warn('[AgentService] Device registration error:', err.message);
-    }
+    } catch {}
   }
 
   public async startWork(): Promise<void> {
     if (!this.token) throw new Error('Must be logged in to start work');
+
     try {
       const res = await axios.post(
         `${this.config.apiUrl}/api/agent/session/start`,
@@ -355,64 +502,57 @@ export class AgentService {
       this.currentSessionId = res.data.data._id;
       this.isWorking = true;
       this.isOnBreak = false;
-      this.currentStatus = ActivityState.ACTIVE;
       this.activeSeconds = res.data.data?.activeSeconds || 0;
       this.idleSeconds = res.data.data?.idleSeconds || 0;
       this.breakSeconds = res.data.data?.breakSeconds || 0;
-      this.currentAppFocusStartTime = new Date();
-      this.currentAppStartTime = new Date();
-      this.currentAppStartMono = process.hrtime.bigint();
-      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (Daily session active: active=${this.activeSeconds}s, idle=${this.idleSeconds}s, break=${this.breakSeconds}s)`);
-      this.notifyStateChange();
-    } catch (err: any) {
-      console.warn('[AgentService] Start session online failed, using offline session:', err.message);
+    } catch {
       this.currentSessionId = `local-${uuidv4()}`;
       this.isWorking = true;
       this.isOnBreak = false;
-      this.currentStatus = ActivityState.ACTIVE;
       this.activeSeconds = 0;
       this.idleSeconds = 0;
       this.breakSeconds = 0;
-      this.currentAppFocusStartTime = new Date();
-      this.currentAppStartTime = new Date();
-      this.currentAppStartMono = process.hrtime.bigint();
-      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (New offline session started from 0)`);
-      this.notifyStateChange();
     }
+
+    this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
+    this.saveCrashRecoveryCheckpoint();
+    this.notifyStateChange();
   }
 
   public async endWork(): Promise<void> {
     const endingSessionId = this.currentSessionId;
-    this.flushCurrentInterval();
+    if (!endingSessionId) return;
 
-    if (this.token && this.currentSessionId && !this.currentSessionId.startsWith('local-')) {
+    this.trackingEngine.endSession();
+
+    if (this.token && !endingSessionId.startsWith('local-')) {
       try {
         await axios.post(
           `${this.config.apiUrl}/api/agent/session/end`,
-          { sessionId: this.currentSessionId, endReason: 'Agent Stopped' },
+          { sessionId: endingSessionId, endReason: 'Agent Stopped' },
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err: any) {
-        console.warn('[AgentService] Error ending session online:', err.message);
-      }
+      } catch {}
     }
 
     this.isWorking = false;
     this.isOnBreak = false;
-    this.currentStatus = ActivityState.OFFLINE;
     this.currentSessionId = undefined;
     this.activeSeconds = 0;
     this.idleSeconds = 0;
     this.breakSeconds = 0;
-    this.currentApp = 'None';
-    this.currentWindowTitle = '';
-    console.log(`[WORK_SESSION] action=END session=${endingSessionId} status=COMPLETED (Counters reset to 0)`);
+
+    try {
+      if (fs.existsSync(this.crashRecoveryFilePath)) fs.unlinkSync(this.crashRecoveryFilePath);
+    } catch {}
+
     this.notifyStateChange();
+    await this.syncQueuedEvents();
   }
 
   public async startBreak(reason: BreakReason | string = BreakReason.OTHER, note?: string): Promise<void> {
     if (!this.isWorking) return;
-    this.flushCurrentInterval();
+    this.trackingEngine.startBreak();
 
     if (this.token) {
       try {
@@ -421,13 +561,10 @@ export class AgentService {
           { reason, note },
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err: any) {
-        console.warn('[AgentService] Error starting break online:', err.message);
-      }
+      } catch {}
     }
 
     this.isOnBreak = true;
-    this.currentStatus = ActivityState.BREAK;
     this.notifyStateChange();
   }
 
@@ -441,87 +578,18 @@ export class AgentService {
           {},
           { headers: { Authorization: `Bearer ${this.token}` } }
         );
-      } catch (err: any) {
-        console.warn('[AgentService] Error ending break online:', err.message);
-      }
+      } catch {}
     }
 
     this.isOnBreak = false;
-    this.currentStatus = ActivityState.ACTIVE;
-    this.currentAppStartTime = new Date();
-    this.currentAppStartMono = process.hrtime.bigint();
+    this.trackingEngine.endBreak();
     this.notifyStateChange();
-  }
-
-  // Close active interval and enqueue to offline queue using monotonic elapsed duration
-  // Only records activity if the application is TRACKED according to the Application Registry
-  private flushCurrentInterval(
-    type: ActivityEventType = ActivityEventType.APPLICATION_FOCUS,
-    idleDeductionSeconds = 0
-  ): void {
-    if (!this.isWorking || this.isOnBreak || !this.currentSessionId) return;
-
-    const now = new Date();
-    const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
-    const rawDurationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
-    const durationSeconds = Math.max(0, rawDurationSeconds - idleDeductionSeconds);
-    const intervalEnd = idleDeductionSeconds > 0
-      ? new Date(now.getTime() - idleDeductionSeconds * 1000)
-      : now;
-
-    // Special handling for IDLE_INTERVAL: record immediately without requiring application registry match
-    if (type === ActivityEventType.IDLE_INTERVAL) {
-      if (rawDurationSeconds >= 1) {
-        const eventId = uuidv4();
-        console.log(`[EVENT]\neventId=${eventId}\ntype=IDLE_INTERVAL\napplication=System Idle\nduration=${rawDurationSeconds}s`);
-        this.offlineQueue.enqueue(eventId, ActivityEventType.IDLE_INTERVAL, {
-          applicationName: 'System Idle',
-          processName: 'idle',
-          windowTitleSanitized: 'System Idle',
-          startedAt: this.currentAppStartTime.toISOString(),
-          endedAt: now.toISOString(),
-          durationSeconds: rawDurationSeconds
-        });
-      }
-      this.currentAppStartTime = now;
-      this.currentAppStartMono = process.hrtime.bigint();
-      return;
-    }
-
-    const isSelfApp =
-      this.currentApp.toLowerCase().includes('highp') ||
-      this.currentApp.toLowerCase().includes('electron') ||
-      this.currentApp === 'Unknown Application';
-
-    // Only record if duration >= 1s and application is TRACKED and not ignored
-    if (
-      durationSeconds >= 1 &&
-      this.currentApp &&
-      this.currentAppIsTracked &&
-      !this.currentAppIsIgnored &&
-      !isSelfApp
-    ) {
-      const eventId = uuidv4();
-      console.log(`[EVENT]\neventId=${eventId}\napplication=${this.currentApp}\nwebsite=${this.currentWebsiteDomain || 'None'}\nduration=${durationSeconds}s`);
-      this.offlineQueue.enqueue(eventId, type, {
-        applicationName: this.currentApp,
-        processName: this.currentProcess,
-        windowTitleSanitized: this.currentWindowTitle || this.currentApp,
-        domain: this.currentWebsiteDomain || undefined,
-        startedAt: this.currentAppStartTime.toISOString(),
-        endedAt: intervalEnd.toISOString(),
-        durationSeconds
-      });
-    }
-
-    this.currentAppStartTime = now;
-    this.currentAppStartMono = process.hrtime.bigint();
   }
 
   private startLoops(): void {
     this.stopLoops();
 
-    // 1. High-frequency tracking loop (every 1 second)
+    // 1. Authoritative 1-second fallback/health tick
     this.trackingTimer = setInterval(async () => {
       await this.runTrackingTick();
     }, 1000);
@@ -542,7 +610,6 @@ export class AgentService {
       await this.syncApplicationRegistry();
     }, 60000);
 
-    // 5. Start Privacy-Safe Browser Bridge on localhost
     browserBridge.start();
   }
 
@@ -563,239 +630,44 @@ export class AgentService {
       return;
     }
 
-    // 1. Query Native Windows Bridge (returns hwnd, processId, executable, executablePath, idleSeconds, timestamp)
-    const snapshot = await nativeBridge.getFreshSnapshot();
+    // Query cross-platform telemetry provider
+    try {
+      const obs = await this.telemetryProvider.queryDirect();
+      this.telemetryError = undefined;
 
-    if (snapshot.status === 'ERROR') {
-      this.telemetryError = snapshot.errorMessage || 'Native telemetry error';
+      // Send observation to Authoritative Tracking Engine
+      this.trackingEngine.processObservation(obs);
+    } catch (err: any) {
+      this.telemetryError = err.message || 'Telemetry provider error';
       this.notifyStateChange();
       return;
     }
 
-    this.telemetryError = undefined;
-
-    // 2. Check System Idle State
-    const idleThresholdSec = Math.max(30, (this.config.idleThresholdMinutes || 1) * 60);
-    const isSystemIdle = snapshot.idleSeconds >= idleThresholdSec;
-
-    if (isSystemIdle) {
-      if (this.currentStatus !== ActivityState.IDLE) {
-        // Transition from ACTIVE to IDLE:
-        // 1. Flush active app interval subtracting the initial idle elapsed duration
-        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS, snapshot.idleSeconds);
-
-        // 2. Retroactively move the initial idle seconds from active to idle counter
-        const retroSec = Math.min(this.activeSeconds, snapshot.idleSeconds);
-        this.activeSeconds = Math.max(0, this.activeSeconds - retroSec);
-        this.idleSeconds += retroSec;
-
-        // 3. Update authoritative status and idle start timer
-        this.currentStatus = ActivityState.IDLE;
-        const idleStart = new Date(Date.now() - snapshot.idleSeconds * 1000);
-        this.currentAppStartTime = idleStart;
-        this.currentAppStartMono = process.hrtime.bigint() - BigInt(snapshot.idleSeconds) * BigInt(1e9);
-
-        console.log(`\n[IDLE_START] User inactive for ${snapshot.idleSeconds}s. State transitioned to IDLE. Retroactive active deduction=${retroSec}s`);
-        this.notifyStateChange();
-        this.sendHeartbeat().catch(() => {});
-        this.syncQueuedEvents().catch(() => {});
-      } else {
-        // Continuous idle accumulation
-        this.idleSeconds += 1;
-
-        // Periodic flush for continuous idle so idle is persisted to DB in real-time
-        const idleElapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
-        if (idleElapsedSec >= 30) {
-          this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
-          this.syncQueuedEvents().catch(() => {});
-        }
-      }
-      return; // Do not resolve foreground applications or add active seconds while idle!
-    } else {
-      if (this.currentStatus === ActivityState.IDLE) {
-        // Transition from IDLE back to ACTIVE: finalize idle interval
-        console.log('\n[IDLE_END] User resumed input (keyboard/mouse). Transitioning to ACTIVE.');
-        this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
-        this.currentStatus = ActivityState.ACTIVE;
-        this.currentAppFocusStartTime = new Date();
-        this.currentAppStartTime = new Date();
-        this.currentAppStartMono = process.hrtime.bigint();
-        this.notifyStateChange();
-        this.sendHeartbeat().catch(() => {});
-        this.syncQueuedEvents().catch(() => {});
-      }
+    // Increment visual display counters based on authoritative state
+    const currentState = this.trackingEngine.getCurrentState();
+    if (currentState === ActivityState.ACTIVE) {
       this.activeSeconds += 1;
-
-      // 3. Authoritative Foreground Application Resolution
-      const resolved = resolveApplication(
-        snapshot.executable,
-        snapshot.executablePath,
-        snapshot.processId,
-        this.dynamicRegistry,
-        snapshot.windowTitle
-      );
-
-      const isAgentSelf = this.isActualAgentProcess(snapshot);
-
-      if (isAgentSelf) {
-        if (this.currentApp !== 'HighP Agent') {
-          this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-          this.previousHwnd = snapshot.hwnd;
-          this.previousPid = snapshot.processId;
-          this.previousExecutable = snapshot.executable || '';
-          this.currentApp = 'HighP Agent';
-          this.currentProcess = snapshot.executable || 'HighPAgent.exe';
-          this.currentCategory = 'System';
-          this.currentExecutablePath = snapshot.executablePath || '';
-          this.currentAppIsTracked = false;
-          this.currentAppIsIgnored = true;
-          this.currentAppTrackingState = 'IGNORED';
-          this.currentWindowTitle = snapshot.windowTitle || 'HighP Agent';
-          this.currentAppStartTime = new Date();
-          this.currentAppFocusStartTime = new Date();
-          this.currentAppStartMono = process.hrtime.bigint();
-          this.updateAuthoritativeCurrentApp(snapshot);
-          this.notifyStateChange();
-          this.sendHeartbeat().catch(() => {});
-        }
-      } else {
-        // If focus momentarily shifts to Windows Desktop (Program Manager, taskbar, Alt-Tab),
-        // do not prematurely cut off or replace the active tracked work application (e.g. Antigravity IDE).
-        const isShellDesktop = resolved.name === 'Windows Desktop';
-        if (isShellDesktop && this.currentAppIsTracked && this.currentApp !== 'Unknown Application') {
-          // Keep active tracked application intact during momentary shell desktop clicks
-          return;
-        }
-
-        const isSameApplication =
-          resolved.name === this.currentApp &&
-          resolved.executableName.toLowerCase() === (this.currentProcess || '').toLowerCase() &&
-          resolved.tracked === this.currentAppIsTracked &&
-          resolved.category === this.currentCategory;
-
-        if (!isSameApplication) {
-          const prevApp = this.currentApp;
-          // Application switch detected: flush previous application interval
-          this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-
-          this.previousHwnd = snapshot.hwnd;
-          this.previousPid = snapshot.processId;
-          this.previousExecutable = snapshot.executable || '';
-          this.currentApp = resolved.name;
-          this.currentProcess = resolved.executableName;
-          this.currentCategory = resolved.category;
-          this.currentExecutablePath = snapshot.executablePath || '';
-          this.currentAppIsTracked = resolved.tracked;
-          this.currentAppIsIgnored = resolved.ignored;
-          this.currentAppTrackingState = resolved.trackingState;
-          this.currentWindowTitle = snapshot.windowTitle || resolved.name;
-          this.currentAppFocusStartTime = new Date();
-          this.currentAppStartTime = new Date();
-          this.currentAppStartMono = process.hrtime.bigint();
-          this.updateAuthoritativeCurrentApp(snapshot);
-
-          // Correlate with active website if application is a browser
-          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable, snapshot.windowTitle);
-          this.currentWebsiteDomain = activeWebsite ? activeWebsite.domain : null;
-          this.currentWebsiteStartTime = new Date();
-          this.currentWebsiteStartMono = process.hrtime.bigint();
-
-          // Section 10 & 27 Diagnostic Logging
-          console.log(`\n[WORK_SESSION]\nstatus=OPEN`);
-          console.log(`[NATIVE]\nPID=${snapshot.processId}\nEXE=${snapshot.executable}\nPATH=${snapshot.executablePath}\nHWND=${snapshot.hwnd}\nIDLE=${snapshot.idleSeconds}`);
-          console.log(`[RESOLVER]\n${snapshot.executable}\n→ ${resolved.name}\n→ ${resolved.category}\n→ ${resolved.trackingState}`);
-          console.log(`[BROWSER]\nbrowser=${resolved.name}\ndomain=${this.currentWebsiteDomain || 'None'}`);
-          console.log(`[ACTIVITY]\napplication=${resolved.name}\nwebsite=${this.currentWebsiteDomain || 'None'}`);
-          console.log(`[AGENT]\nPrevious=${prevApp}\nCurrent=${resolved.name}\nChanged=true`);
-
-          if (resolved.trackingState === 'UNKNOWN' || resolved.isUnknown) {
-            this.reportUnknownApp(snapshot.executable, snapshot.executablePath, snapshot.windowTitle);
-          } else if (resolved.trackingState === 'IGNORED' || resolved.ignored) {
-            console.log(`[ACTIVITY]\nApplication=${resolved.name}\nAction=SUPPRESS (Ignored)`);
-          } else {
-            console.log(`[ACTIVITY]\nApplication=${resolved.name}\nAction=START`);
-          }
-
-          this.notifyStateChange();
-
-          // Instantly send live heartbeat and sync queued events
-          this.sendHeartbeat().catch(() => {});
-          if (this.currentAppIsTracked) {
-            this.syncQueuedEvents().catch(() => {});
-          }
-        } else {
-          this.currentWindowTitle = snapshot.windowTitle || this.currentWindowTitle;
-          if (this.currentApplicationState) {
-            this.currentApplicationState.lastSeenAt = new Date().toISOString();
-          }
-
-          // Correlate with active website tab inside the same browser
-          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable, snapshot.windowTitle);
-          const newDomain = activeWebsite ? activeWebsite.domain : null;
-
-          if (newDomain !== this.currentWebsiteDomain) {
-            // Website tab switch within the same browser application (Section 11)
-            // Application session remains unchanged; record distinct website interval
-            if (this.currentWebsiteDomain && this.currentAppIsTracked && !this.currentAppIsIgnored) {
-              this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-              this.syncQueuedEvents().catch(() => {});
-            }
-            const prevDomain = this.currentWebsiteDomain;
-            this.currentWebsiteDomain = newDomain;
-            this.currentWebsiteStartTime = new Date();
-            this.currentWebsiteStartMono = process.hrtime.bigint();
-
-            console.log(`\n[BROWSER]\nbrowser=${this.currentApp}\ndomain=${newDomain || 'None'}\nPreviousDomain=${prevDomain || 'None'}`);
-            console.log(`[ACTIVITY]\napplication=${this.currentApp}\nwebsite=${newDomain || 'None'}`);
-
-            this.sendHeartbeat().catch(() => {});
-          } else {
-            // Periodic flush check: If continuing in this tracked app for >= 30s,
-            // flush the interval checkpoint so events are continuously synced to backend!
-            const elapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
-            if (elapsedSec >= 30 && this.currentAppIsTracked && !this.currentAppIsIgnored) {
-              this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-              this.syncQueuedEvents().catch(() => {});
-            }
-          }
-          this.notifyStateChange();
-        }
-      }
+    } else if (currentState === ActivityState.IDLE) {
+      this.idleSeconds += 1;
     }
-  }
 
-  private updateAuthoritativeCurrentApp(snapshot: NativeTelemetryResult): void {
-    this.currentApplicationState = {
-      name: this.currentApp,
-      executableName: this.currentProcess,
-      executablePath: this.currentExecutablePath,
-      category: this.currentCategory,
-      trackingState: this.currentAppTrackingState,
-      processId: snapshot.processId || 0,
-      hwnd: snapshot.hwnd || '0',
-      windowTitle: this.currentWindowTitle,
-      startedAt: this.currentAppStartTime.toISOString(),
-      lastSeenAt: new Date().toISOString()
-    };
+    this.notifyStateChange();
   }
 
   private async sendHeartbeat(): Promise<void> {
     if (!this.token || !this.isWorking) return;
 
     try {
-      const snap = nativeBridge.getSnapshot();
-      const isIdleNow = this.currentStatus === ActivityState.IDLE;
-      const cleanApp =
-        !isIdleNow &&
-        this.currentApp &&
-        !this.currentApp.toLowerCase().includes('highp') &&
-        !this.currentApp.toLowerCase().includes('electron')
-          ? this.currentApp
-          : '';
+      const currentApp = this.trackingEngine.getCurrentApp();
+      const currentWeb = this.trackingEngine.getCurrentWebsite();
+      const currentState = this.trackingEngine.getCurrentState();
+      const isIdleNow = currentState === ActivityState.IDLE;
+      const lastIdleSec = this.trackingEngine.getLastObservedIdleSeconds();
 
-      const focusDurSec = isIdleNow
-        ? 0
-        : Math.max(0, Math.floor((Date.now() - this.currentAppFocusStartTime.getTime()) / 1000));
+      const cleanApp = (!isIdleNow && currentApp) ? currentApp.name : '';
+      const focusDurSec = (!isIdleNow && currentApp)
+        ? Math.max(0, Math.floor((Date.now() - currentApp.startedAt.getTime()) / 1000))
+        : 0;
 
       const res = await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
@@ -803,47 +675,42 @@ export class AgentService {
           deviceId: this.deviceIdentifier,
           sessionId: this.currentSessionId,
           timestamp: new Date().toISOString(),
-          status: this.currentStatus,
-          currentApplication: isIdleNow ? '' : cleanApp,
-          executable: isIdleNow ? '' : this.currentProcess,
-          category: isIdleNow ? 'Other' : this.currentCategory,
-          trackingState: isIdleNow ? 'IGNORED' : this.currentAppTrackingState,
-          pid: snap.processId || null,
-          hwnd: snap.hwnd && snap.hwnd !== '0' ? parseInt(snap.hwnd, 10) : null,
-          startedAt: isIdleNow ? null : this.currentAppFocusStartTime.toISOString(),
+          status: currentState,
+          currentApplication: cleanApp,
+          executable: currentApp?.executable || '',
+          category: currentApp?.category || 'Other',
+          trackingState: currentApp?.trackingState || 'IGNORED',
+          pid: currentApp?.pid || null,
+          hwnd: currentApp?.hwnd ? (isNaN(Number(currentApp.hwnd)) ? null : parseInt(currentApp.hwnd, 10)) : null,
+          startedAt: currentApp?.startedAt.toISOString() || null,
           activeDurationSeconds: focusDurSec,
           totalActiveSeconds: this.activeSeconds,
           totalIdleSeconds: this.idleSeconds,
-          idleSeconds: snap.idleSeconds,
-          windowTitle: isIdleNow ? 'System Idle' : (this.currentWindowTitle || cleanApp),
-          website: isIdleNow ? null : (this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null),
+          idleSeconds: lastIdleSec,
+          windowTitle: isIdleNow ? 'System Idle' : (currentApp?.windowTitle || cleanApp),
+          website: currentWeb ? { domain: currentWeb.domain } : null,
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
       );
 
       if (res.data?.sessionEnded || res.data?.status === 'OFFLINE') {
-        console.log('[AgentService] Server reported session ended. Stopping active tracking and resetting counters.');
+        this.trackingEngine.endSession();
         this.isWorking = false;
         this.isOnBreak = false;
-        this.currentStatus = ActivityState.OFFLINE;
         this.currentSessionId = undefined;
         this.activeSeconds = 0;
         this.idleSeconds = 0;
         this.breakSeconds = 0;
-        this.currentApp = 'None';
-        this.currentWindowTitle = '';
         this.notifyStateChange();
         return;
       }
 
       this.isOnline = true;
       this.lastHeartbeatTime = new Date().toLocaleTimeString();
-      console.log(`[HEARTBEAT] session=${this.currentSessionId} application=${cleanApp || 'None'} website=${this.currentWebsiteDomain || 'None'} status=${this.currentStatus}`);
     } catch (err: any) {
       this.isOnline = false;
       if (err.response?.status === 403) {
-        console.error('[AgentService] Device has been revoked by admin');
         this.telemetryError = 'Device revoked by administrator.';
         this.stopLoops();
       }
@@ -859,18 +726,29 @@ export class AgentService {
 
     const eventsPayload = batch.map((item) => ({
       eventId: item.eventId,
-      type: item.type,
-      applicationName: item.payload.applicationName,
-      processName: item.payload.processName,
-      windowTitleSanitized: item.payload.windowTitleSanitized,
-      domain: item.payload.domain,
-      startedAt: item.payload.startedAt,
-      endedAt: item.payload.endedAt,
-      durationSeconds: item.payload.durationSeconds
+      type: item.eventType,
+      sequenceNumber: item.sequenceNumber,
+      applicationName: item.application?.name || item.process || 'Unknown Application',
+      processName: item.process || item.application?.executable || 'unknown.exe',
+      windowTitleSanitized: item.application?.windowTitle || item.application?.name || '',
+      domain: item.website?.domain || undefined,
+      startedAt: item.startedAt || item.timestamp,
+      endedAt: item.endedAt || item.timestamp,
+      wallClockStart: item.wallClockStart || item.startedAt || item.timestamp,
+      wallClockEnd: item.wallClockEnd || item.endedAt || item.timestamp,
+      durationMs: item.durationMs ?? (item.durationSeconds ? item.durationSeconds * 1000 : 0),
+      durationSeconds: item.durationSeconds || 0,
+      clockSource: item.clockSource || 'MONOTONIC',
+      sessionId: item.sessionId,
+      deviceId: item.deviceId || this.deviceIdentifier,
+      pid: item.pid,
+      hwnd: item.hwnd,
+      browser: item.browser || item.website?.browser,
+      windowId: item.windowId || item.website?.windowId,
+      tabId: item.tabId || item.website?.tabId
     }));
 
     try {
-      console.log(`[SYNC]\napplication=${eventsPayload.map((e) => e.applicationName).join(', ')}`);
       const res = await axios.post(
         `${this.config.apiUrl}/api/agent/sync`,
         {
@@ -882,14 +760,14 @@ export class AgentService {
       );
 
       if (res.status === 200 && res.data?.data) {
-        const accepted = res.data.data.accepted || [];
-        const duplicates = res.data.data.duplicates || [];
+        const accepted: string[] = res.data.data.accepted || [];
+        const duplicates: string[] = res.data.data.duplicates || [];
         const confirmedIds = [...accepted, ...duplicates];
 
         this.offlineQueue.markSynced(confirmedIds);
 
-        // If any failed, mark for exponential backoff
-        const failed = res.data.data.failed || [];
+        // Handle partial batch failures safely
+        const failed: any[] = res.data.data.failed || [];
         if (failed.length > 0) {
           const failedIds = failed.map((f: any) => f.eventId);
           this.offlineQueue.markFailed(failedIds);
@@ -897,6 +775,7 @@ export class AgentService {
 
         this.isOnline = true;
         this.lastSyncTime = new Date().toLocaleTimeString();
+        this.trackingEngine.markSyncedAt(new Date().toISOString());
         this.notifyStateChange();
       }
     } catch (err: any) {
@@ -907,64 +786,31 @@ export class AgentService {
     }
   }
 
-  // Handlers for PowerMonitor (suspend, resume, lock, unlock)
-  public handleSystemSleep(): void {
-    console.log('[AgentService] System sleep detected. Flushing active intervals.');
-    this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-    this.currentStatus = ActivityState.IDLE;
-    this.notifyStateChange();
-  }
-
-  public handleSystemResume(): void {
-    console.log('[AgentService] System resume detected.');
-    if (this.isWorking && !this.isOnBreak) {
-      this.currentStatus = ActivityState.ACTIVE;
-      this.currentAppStartTime = new Date();
-      this.currentAppStartMono = process.hrtime.bigint();
-      this.notifyStateChange();
-    }
-  }
-
+  // Windows PowerMonitor Handlers
   public handleScreenLock(): void {
-    console.log('[AgentService] Workstation locked.');
-    this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
-    this.currentStatus = ActivityState.IDLE;
+    this.trackingEngine.handleScreenLock();
     this.notifyStateChange();
   }
 
   public handleScreenUnlock(): void {
-    console.log('[AgentService] Workstation unlocked.');
-    if (this.isWorking && !this.isOnBreak) {
-      this.currentStatus = ActivityState.ACTIVE;
-      this.currentAppStartTime = new Date();
-      this.currentAppStartMono = process.hrtime.bigint();
-      this.notifyStateChange();
-    }
+    this.trackingEngine.handleScreenUnlock();
+    this.notifyStateChange();
   }
 
-  private isActualAgentProcess(snapshot: NativeTelemetryResult): boolean {
-    if (!snapshot || !snapshot.executable) return false;
-    if (snapshot.processId === process.pid) return true;
-    const exeLower = snapshot.executable.toLowerCase().trim();
-    if (
-      exeLower === 'highpagent.exe' ||
-      exeLower === 'highp-desktop-agent.exe' ||
-      exeLower === 'highp agent.exe'
-    ) {
-      return true;
+  public handleSystemSleep(): void {
+    this.trackingEngine.handleSystemSleep();
+    this.notifyStateChange();
+  }
+
+  public handleSystemResume(): void {
+    this.trackingEngine.handleSystemResume();
+    this.notifyStateChange();
+  }
+
+  public handleAppShutdown(): void {
+    if (this.isWorking && this.currentSessionId) {
+      this.saveCrashRecoveryCheckpoint();
+      this.trackingEngine.endSession();
     }
-    if (exeLower === 'electron.exe') {
-      const pathLower = (snapshot.executablePath || '').toLowerCase();
-      const titleLower = (snapshot.windowTitle || '').toLowerCase();
-      if (
-        pathLower.includes('highp agent') ||
-        pathLower.includes('highp-desktop-agent') ||
-        titleLower.includes('highp agent')
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
 }
-

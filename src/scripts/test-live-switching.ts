@@ -95,7 +95,7 @@ async function testLiveSwitchingPipeline() {
 
   console.log('--- Step 1: Testing Application Resolution Matrix ---');
   for (const tc of testCases) {
-    const res = resolveApplication(tc.exe, tc.path, 1234);
+    const res = resolveApplication(tc.exe, tc.path, 1234, [], tc.title);
     const passName = res.name === tc.expectedName;
     const passCat = res.category === tc.expectedCategory;
     const passState = res.trackingState === tc.expectedState;

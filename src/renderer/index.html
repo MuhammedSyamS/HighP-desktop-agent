@@ -126,23 +126,51 @@
         </div>
       </div>
 
-      <!-- Live Telemetry Diagnostics Panel (Requirement #45) -->
+      <!-- Cross-Platform Telemetry Diagnostics Panel (Requirements #5 & #20) -->
       <div class="card diag-card">
         <div class="diag-header">
-          <span class="label">AGENT & TELEMETRY STATUS</span>
+          <div>
+            <span class="label">CROSS-PLATFORM TELEMETRY & CAPABILITIES</span>
+            <div id="diagPlatformBadge" class="diag-platform-badge">Detecting...</div>
+          </div>
           <span id="diagSyncPill" class="sync-pill synced">Synced</span>
         </div>
+
+        <!-- Permission Alert Banner -->
+        <div id="permissionWarningBanner" class="permission-warning-banner hidden">
+          <div class="perm-title">⚠️ PERMISSION REQUIRED</div>
+          <div id="permissionWarningText" class="perm-desc">Elevated permissions are required to accurately capture window titles on this system.</div>
+        </div>
+
         <div class="diag-grid">
+          <div class="diag-row"><span class="diag-k">Platform:</span><span id="diagPlatform" class="diag-v">-</span></div>
+          <div class="diag-row"><span class="diag-k">Architecture:</span><span id="diagArch" class="diag-v">-</span></div>
+          <div class="diag-row"><span class="diag-k">Agent Version:</span><span id="diagVersion" class="diag-v">2.0.0</span></div>
           <div class="diag-row"><span class="diag-k">Connection:</span><span id="diagConn" class="diag-v">Connected</span></div>
           <div class="diag-row"><span class="diag-k">Server:</span><span id="diagServer" class="diag-v">Connected</span></div>
-          <div class="diag-row"><span class="diag-k">Device:</span><span id="diagDevice" class="diag-v">Registered</span></div>
+          <div class="diag-row"><span class="diag-k">Device ID:</span><span id="diagDevice" class="diag-v">Registered</span></div>
           <div class="diag-row"><span class="diag-k">Session:</span><span id="diagSession" class="diag-v">No Active Session</span></div>
           <div class="diag-row"><span class="diag-k">Current App:</span><span id="diagApp" class="diag-v">-</span></div>
-          <div class="diag-row"><span class="diag-k">Status:</span><span id="diagStatus" class="diag-v">Offline</span></div>
-          <div class="diag-row"><span class="diag-k">Offline Queue:</span><span id="diagQueue" class="diag-v">0</span></div>
+          <div class="diag-row"><span class="diag-k">Native Provider:</span><span id="diagProvider" class="diag-v">Checking...</span></div>
+          <div class="diag-row"><span class="diag-k">Offline Queue:</span><span id="diagQueue" class="diag-v">HEALTHY (0)</span></div>
           <div class="diag-row"><span class="diag-k">Last Sync:</span><span id="diagSync" class="diag-v">Never</span></div>
           <div class="diag-row"><span class="diag-k">Last Heartbeat:</span><span id="diagHeartbeat" class="diag-v">Never</span></div>
         </div>
+
+        <!-- Platform Capability Matrix -->
+        <div class="capability-section">
+          <div class="capability-title">OS CAPABILITY MATRIX</div>
+          <div class="capability-grid">
+            <div class="cap-item"><span>Foreground App</span><span id="capForeground" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Window Identity</span><span id="capWindowId" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Window Title</span><span id="capWindowTitle" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Idle Detection</span><span id="capIdle" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Lock Detection</span><span id="capLock" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Sleep Detection</span><span id="capSleep" class="cap-tag pass">YES</span></div>
+            <div class="cap-item"><span>Browser Tracking</span><span id="capBrowser" class="cap-tag pass">YES</span></div>
+          </div>
+        </div>
+
         <div id="telemetryErrorAlert" class="telemetry-error-alert hidden">
           ⚠️ <strong>Telemetry Notice:</strong> <span id="telemetryErrorText"></span>
         </div>

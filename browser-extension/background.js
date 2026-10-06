@@ -1,23 +1,15 @@
-// HighP Privacy-Safe Active Website Tracker (Manifest V3 Service Worker)
-// Detects ONLY the active tab's domain. NEVER captures URLs, passwords, form fields, or search history.
+// HighP Event-Driven Browser Telemetry Companion (Manifest V3 Service Worker)
+// Detects active tab events instantaneously with zero stale caching. NEVER captures passwords, forms, or search queries.
 
 const AGENT_PORT = 41789;
 const AGENT_URL = `http://127.0.0.1:${AGENT_PORT}/api/browser/activity`;
 
-let currentDomain = null;
-let currentTabActivatedAt = new Date().toISOString();
 let cachedBrowserName = null;
 
-/**
- * Strict Privacy-Safe Domain Normalization (Section 8)
- * Strips protocol, www., paths, query strings, hashes, credentials, and ports.
- * Returns only the clean root hostname (e.g., 'notion.so', 'github.com').
- */
 function normalizeDomain(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
     const parsed = new URL(rawUrl);
-    // Ignore internal browser pages and local resources
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return null;
     }
@@ -25,7 +17,6 @@ function normalizeDomain(rawUrl) {
     if (host.startsWith('www.')) {
       host = host.slice(4);
     }
-    // Remove port if present
     if (host.includes(':')) {
       host = host.split(':')[0];
     }
@@ -35,13 +26,20 @@ function normalizeDomain(rawUrl) {
   }
 }
 
-/**
- * Identify the running browser (Brave, Chrome, Edge)
- */
+function sanitizeUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  try {
+    const parsed = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
 async function detectBrowser() {
   if (cachedBrowserName) return cachedBrowserName;
   try {
-    // Brave Detection
     if (navigator.brave && typeof navigator.brave.isBrave === 'function') {
       const isBrave = await navigator.brave.isBrave();
       if (isBrave) {
@@ -63,90 +61,137 @@ async function detectBrowser() {
   return cachedBrowserName;
 }
 
-/**
- * Transmit active domain to the local HighP Desktop Agent
- */
-async function reportActiveWebsite(domain) {
-  if (!domain) return;
+async function transmitEvent(eventType, tabData) {
   const browser = await detectBrowser();
   const now = new Date().toISOString();
 
   const payload = {
+    eventType,
     browser,
-    domain,
-    tabActivatedAt: currentTabActivatedAt,
+    active: tabData?.active ?? false,
+    windowId: tabData?.windowId ?? 0,
+    tabId: tabData?.tabId ?? 0,
+    domain: tabData?.domain ?? null,
+    url: tabData?.url ?? '',
+    title: tabData?.title ?? '',
     timestamp: now
   };
 
   try {
-    const response = await fetch(AGENT_URL, {
+    const res = await fetch(AGENT_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-HighP-Extension': '1.0.0'
+        'X-HighP-Extension': '2.0.0'
       },
       body: JSON.stringify(payload)
     });
-    if (response.ok) {
+    if (res.ok) {
       chrome.storage.local.set({
-        lastReportedDomain: domain,
+        agentConnected: true,
         lastReportedAt: now,
-        agentConnected: true
+        lastDomain: payload.domain
       });
     }
-  } catch (err) {
-    // Desktop agent may be temporarily stopped or not running; fail silently
+  } catch {
     chrome.storage.local.set({ agentConnected: false });
   }
 }
 
-/**
- * Inspect active tab in focused window
- */
-async function inspectActiveTab() {
+async function inspectAndReport(eventType = 'HEARTBEAT') {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (!tab || !tab.url) return;
-
-    const domain = normalizeDomain(tab.url);
-    if (!domain) return;
-
-    if (domain !== currentDomain) {
-      currentDomain = domain;
-      currentTabActivatedAt = new Date().toISOString();
-      await reportActiveWebsite(domain);
+    const lastWin = await chrome.windows.getLastFocused({ populate: false });
+    if (!lastWin || !lastWin.focused) {
+      // Browser window is unfocused / blurred
+      await transmitEvent('WINDOW_BLURRED', { active: false });
+      return;
     }
+
+    const [activeTab] = await chrome.tabs.query({ active: true, windowId: lastWin.id });
+    if (!activeTab || !activeTab.url) {
+      await transmitEvent('NO_ACTIVE_TAB', { active: false, windowId: lastWin.id });
+      return;
+    }
+
+    const domain = normalizeDomain(activeTab.url);
+    if (!domain) {
+      await transmitEvent('INTERNAL_PAGE', { active: false, windowId: lastWin.id, tabId: activeTab.id });
+      return;
+    }
+
+    await transmitEvent(eventType, {
+      active: true,
+      windowId: activeTab.windowId,
+      tabId: activeTab.id,
+      domain,
+      url: sanitizeUrl(activeTab.url),
+      title: (activeTab.title || domain).slice(0, 300)
+    });
   } catch {}
 }
 
-// 1. Tab switched by user
-chrome.tabs.onActivated.addListener(async () => {
-  currentTabActivatedAt = new Date().toISOString();
-  await inspectActiveTab();
+// 1. Instant Tab Activation
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    const win = await chrome.windows.get(activeInfo.windowId);
+    if (win && win.focused && tab && tab.url) {
+      const domain = normalizeDomain(tab.url);
+      if (domain) {
+        await transmitEvent('TAB_ACTIVATED', {
+          active: true,
+          windowId: tab.windowId,
+          tabId: tab.id,
+          domain,
+          url: sanitizeUrl(tab.url),
+          title: (tab.title || domain).slice(0, 300)
+        });
+        return;
+      }
+    }
+  } catch {}
+  await inspectAndReport('TAB_ACTIVATED');
 });
 
-// 2. Active tab navigated to a new URL
+// 2. Instant Navigation / URL updated
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (tab.active && (changeInfo.url || changeInfo.status === 'complete')) {
-    await inspectActiveTab();
+    const domain = normalizeDomain(tab.url);
+    if (domain) {
+      await transmitEvent('NAVIGATED', {
+        active: true,
+        windowId: tab.windowId,
+        tabId: tab.id,
+        domain,
+        url: sanitizeUrl(tab.url),
+        title: (tab.title || domain).slice(0, 300)
+      });
+    }
   }
 });
 
-// 3. Browser window focus changed
+// 3. Window Focus / Blur Changed
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
-  if (windowId !== chrome.windows.WINDOW_ID_NONE) {
-    await inspectActiveTab();
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    await transmitEvent('WINDOW_BLURRED', { active: false });
+  } else {
+    await inspectAndReport('WINDOW_FOCUSED');
   }
 });
 
-// 4. Periodic keep-alive tick (every 10 seconds) to keep local agent updated
-setInterval(async () => {
-  if (currentDomain) {
-    await reportActiveWebsite(currentDomain);
+// 4. Tab Removed / Closed
+chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
+  if (removeInfo.isWindowClosing) {
+    await transmitEvent('WINDOW_BLURRED', { active: false });
   } else {
-    await inspectActiveTab();
+    await inspectAndReport('TAB_REMOVED');
   }
-}, 10000);
+});
 
-// Initial check on load
-inspectActiveTab();
+// 5. Periodic Heartbeat (every 5 seconds) as liveness health-check only
+setInterval(async () => {
+  await inspectAndReport('HEARTBEAT');
+}, 5000);
+
+// Initial broadcast on start
+inspectAndReport('STARTUP');
