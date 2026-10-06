@@ -40,19 +40,27 @@ export interface TrackedApplicationEntry {
 // Built-in offline fallback registry (authoritative executable -> application mappings)
 export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
   // Development
-  { name: 'Visual Studio Code', executableNames: ['code.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Visual Studio Code', executableNames: ['code.exe', 'vscodium.exe', 'code - oss.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Cursor', executableNames: ['cursor.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Antigravity IDE', executableNames: ['antigravity.exe', 'antigravity ide.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Visual Studio', executableNames: ['devenv.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'IntelliJ IDEA', executableNames: ['idea64.exe', 'idea.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'WebStorm', executableNames: ['webstorm64.exe', 'webstorm.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Android Studio', executableNames: ['studio64.exe', 'studio.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'PyCharm', executableNames: ['pycharm64.exe', 'pycharm.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Sublime Text', executableNames: ['sublime_text.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Git', executableNames: ['git.exe', 'git-bash.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
-  { name: 'GitHub Desktop', executableNames: ['githubdesktop.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
-  { name: 'Antigravity IDE', executableNames: ['antigravity.exe', 'antigravity ide.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
-  { name: 'Windows Terminal', executableNames: ['windowsterminal.exe', 'powershell.exe', 'cmd.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'GitHub Desktop', executableNames: ['githubdesktop.exe', 'github desktop.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'GitKraken', executableNames: ['gitkraken.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'SourceTree', executableNames: ['sourcetree.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Windows Terminal', executableNames: ['windowsterminal.exe', 'wt.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Postman', executableNames: ['postman.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Insomnia', executableNames: ['insomnia.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Docker Desktop', executableNames: ['docker desktop.exe', 'com.docker.backend.exe', 'docker.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
   { name: 'DBeaver', executableNames: ['dbeaver.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'MongoDB Compass', executableNames: ['mongodbcompass.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'MySQL Workbench', executableNames: ['mysqlworkbench.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'pgAdmin', executableNames: ['pgadmin4.exe'], category: 'Development', tracked: true, ignored: false, isSystemApp: false },
 
   // Design
   { name: 'Figma', executableNames: ['figma.exe'], category: 'Design', tracked: true, ignored: false, isSystemApp: false },
@@ -66,9 +74,12 @@ export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
 
   // Communication
   { name: 'Slack', executableNames: ['slack.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
-  { name: 'Microsoft Teams', executableNames: ['teams.exe', 'ms-teams.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft Teams', executableNames: ['teams.exe', 'ms-teams.exe', 'msteams.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Discord', executableNames: ['discord.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Zoom', executableNames: ['zoom.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'WhatsApp', executableNames: ['whatsapp.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Telegram', executableNames: ['telegram.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Skype', executableNames: ['skype.exe'], category: 'Communication', tracked: true, ignored: false, isSystemApp: false },
 
   // Browsers
   { name: 'Google Chrome', executableNames: ['chrome.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
@@ -76,13 +87,16 @@ export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
   { name: 'Mozilla Firefox', executableNames: ['firefox.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Brave', executableNames: ['brave.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Opera', executableNames: ['opera.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Vivaldi', executableNames: ['vivaldi.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Arc Browser', executableNames: ['arc.exe'], category: 'Browsers', tracked: true, ignored: false, isSystemApp: false },
 
-  // Productivity
+  // Productivity & Office
   { name: 'Notion', executableNames: ['notion.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Microsoft Word', executableNames: ['winword.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Microsoft Excel', executableNames: ['excel.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Microsoft PowerPoint', executableNames: ['powerpnt.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Microsoft Outlook', executableNames: ['outlook.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Microsoft OneNote', executableNames: ['onenote.exe', 'onenotem.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Notepad', executableNames: ['notepad.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Notepad++', executableNames: ['notepad++.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Obsidian', executableNames: ['obsidian.exe'], category: 'Productivity', tracked: true, ignored: false, isSystemApp: false },
@@ -92,6 +106,7 @@ export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
   { name: 'Trello', executableNames: ['trello.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
   { name: 'ClickUp', executableNames: ['clickup.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
   { name: 'Asana', executableNames: ['asana.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
+  { name: 'Linear', executableNames: ['linear.exe'], category: 'Project Management', tracked: true, ignored: false, isSystemApp: false },
 
   // Marketing
   { name: 'Google Ads', executableNames: ['googleads.exe', 'google-ads.exe'], category: 'Marketing', tracked: true, ignored: false, isSystemApp: false },

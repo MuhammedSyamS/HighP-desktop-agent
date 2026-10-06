@@ -62,7 +62,7 @@ export class AgentService {
 
   private config: AgentConfig = {
     apiUrl: process.env.HIGHP_API_URL || 'https://highp-agent-backend.onrender.com',
-    idleThresholdMinutes: 5,
+    idleThresholdMinutes: 1,
     heartbeatIntervalSeconds: 15
   };
 
@@ -356,10 +356,13 @@ export class AgentService {
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
+      this.activeSeconds = 0;
+      this.idleSeconds = 0;
+      this.breakSeconds = 0;
       this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
-      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN`);
+      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (New session started from 0)`);
       this.notifyStateChange();
     } catch (err: any) {
       console.warn('[AgentService] Start session online failed, using offline session:', err.message);
@@ -367,10 +370,13 @@ export class AgentService {
       this.isWorking = true;
       this.isOnBreak = false;
       this.currentStatus = ActivityState.ACTIVE;
+      this.activeSeconds = 0;
+      this.idleSeconds = 0;
+      this.breakSeconds = 0;
       this.currentAppFocusStartTime = new Date();
       this.currentAppStartTime = new Date();
       this.currentAppStartMono = process.hrtime.bigint();
-      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN`);
+      console.log(`[WORK_SESSION] action=START session=${this.currentSessionId} status=OPEN (New offline session started from 0)`);
       this.notifyStateChange();
     }
   }
@@ -395,7 +401,12 @@ export class AgentService {
     this.isOnBreak = false;
     this.currentStatus = ActivityState.OFFLINE;
     this.currentSessionId = undefined;
-    console.log(`[WORK_SESSION] action=END session=${endingSessionId} status=COMPLETED`);
+    this.activeSeconds = 0;
+    this.idleSeconds = 0;
+    this.breakSeconds = 0;
+    this.currentApp = 'None';
+    this.currentWindowTitle = '';
+    console.log(`[WORK_SESSION] action=END session=${endingSessionId} status=COMPLETED (Counters reset to 0)`);
     this.notifyStateChange();
   }
 
@@ -444,25 +455,32 @@ export class AgentService {
 
   // Close active interval and enqueue to offline queue using monotonic elapsed duration
   // Only records activity if the application is TRACKED according to the Application Registry
-  private flushCurrentInterval(type: ActivityEventType = ActivityEventType.APPLICATION_FOCUS): void {
+  private flushCurrentInterval(
+    type: ActivityEventType = ActivityEventType.APPLICATION_FOCUS,
+    idleDeductionSeconds = 0
+  ): void {
     if (!this.isWorking || this.isOnBreak || !this.currentSessionId) return;
 
     const now = new Date();
     const elapsedNs = process.hrtime.bigint() - this.currentAppStartMono;
-    const durationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
+    const rawDurationSeconds = Math.max(0, Math.round(Number(elapsedNs) / 1e9));
+    const durationSeconds = Math.max(0, rawDurationSeconds - idleDeductionSeconds);
+    const intervalEnd = idleDeductionSeconds > 0
+      ? new Date(now.getTime() - idleDeductionSeconds * 1000)
+      : now;
 
     // Special handling for IDLE_INTERVAL: record immediately without requiring application registry match
     if (type === ActivityEventType.IDLE_INTERVAL) {
-      if (durationSeconds >= 1) {
+      if (rawDurationSeconds >= 1) {
         const eventId = uuidv4();
-        console.log(`[EVENT]\neventId=${eventId}\ntype=IDLE_INTERVAL\napplication=System Idle\nduration=${durationSeconds}s`);
+        console.log(`[EVENT]\neventId=${eventId}\ntype=IDLE_INTERVAL\napplication=System Idle\nduration=${rawDurationSeconds}s`);
         this.offlineQueue.enqueue(eventId, ActivityEventType.IDLE_INTERVAL, {
           applicationName: 'System Idle',
           processName: 'idle',
           windowTitleSanitized: 'System Idle',
           startedAt: this.currentAppStartTime.toISOString(),
           endedAt: now.toISOString(),
-          durationSeconds
+          durationSeconds: rawDurationSeconds
         });
       }
       this.currentAppStartTime = now;
@@ -491,7 +509,7 @@ export class AgentService {
         windowTitleSanitized: this.currentWindowTitle || this.currentApp,
         domain: this.currentWebsiteDomain || undefined,
         startedAt: this.currentAppStartTime.toISOString(),
-        endedAt: now.toISOString(),
+        endedAt: intervalEnd.toISOString(),
         durationSeconds
       });
     }
@@ -557,23 +575,46 @@ export class AgentService {
     this.telemetryError = undefined;
 
     // 2. Check System Idle State
-    const idleThresholdSec = (this.config.idleThresholdMinutes || 5) * 60;
+    const idleThresholdSec = Math.max(30, (this.config.idleThresholdMinutes || 1) * 60);
     const isSystemIdle = snapshot.idleSeconds >= idleThresholdSec;
 
     if (isSystemIdle) {
       if (this.currentStatus !== ActivityState.IDLE) {
-        // Transition from ACTIVE to IDLE: close active app interval
-        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS);
+        // Transition from ACTIVE to IDLE:
+        // 1. Flush active app interval subtracting the initial idle elapsed duration
+        this.flushCurrentInterval(ActivityEventType.APPLICATION_FOCUS, snapshot.idleSeconds);
+
+        // 2. Retroactively move the initial idle seconds from active to idle counter
+        const retroSec = Math.min(this.activeSeconds, snapshot.idleSeconds);
+        this.activeSeconds = Math.max(0, this.activeSeconds - retroSec);
+        this.idleSeconds += retroSec;
+
+        // 3. Update authoritative status and idle start timer
         this.currentStatus = ActivityState.IDLE;
-        this.currentAppStartTime = new Date();
-        this.currentAppStartMono = process.hrtime.bigint();
+        const idleStart = new Date(Date.now() - snapshot.idleSeconds * 1000);
+        this.currentAppStartTime = idleStart;
+        this.currentAppStartMono = process.hrtime.bigint() - BigInt(snapshot.idleSeconds) * BigInt(1e9);
+
+        console.log(`\n[IDLE_START] User inactive for ${snapshot.idleSeconds}s. State transitioned to IDLE. Retroactive active deduction=${retroSec}s`);
         this.notifyStateChange();
         this.sendHeartbeat().catch(() => {});
+        this.syncQueuedEvents().catch(() => {});
+      } else {
+        // Continuous idle accumulation
+        this.idleSeconds += 1;
+
+        // Periodic flush for continuous idle so idle is persisted to DB in real-time
+        const idleElapsedSec = Math.round(Number(process.hrtime.bigint() - this.currentAppStartMono) / 1e9);
+        if (idleElapsedSec >= 30) {
+          this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
+          this.syncQueuedEvents().catch(() => {});
+        }
       }
-      this.idleSeconds += 1;
+      return; // Do not resolve foreground applications or add active seconds while idle!
     } else {
       if (this.currentStatus === ActivityState.IDLE) {
-        // Transition from IDLE back to ACTIVE: record idle interval
+        // Transition from IDLE back to ACTIVE: finalize idle interval
+        console.log('\n[IDLE_END] User resumed input (keyboard/mouse). Transitioning to ACTIVE.');
         this.flushCurrentInterval(ActivityEventType.IDLE_INTERVAL);
         this.currentStatus = ActivityState.ACTIVE;
         this.currentAppFocusStartTime = new Date();
@@ -654,7 +695,7 @@ export class AgentService {
           this.updateAuthoritativeCurrentApp(snapshot);
 
           // Correlate with active website if application is a browser
-          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable);
+          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable, snapshot.windowTitle);
           this.currentWebsiteDomain = activeWebsite ? activeWebsite.domain : null;
           this.currentWebsiteStartTime = new Date();
           this.currentWebsiteStartMono = process.hrtime.bigint();
@@ -689,7 +730,7 @@ export class AgentService {
           }
 
           // Correlate with active website tab inside the same browser
-          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable);
+          const activeWebsite = browserBridge.getActiveWebsite(snapshot.executable, snapshot.windowTitle);
           const newDomain = activeWebsite ? activeWebsite.domain : null;
 
           if (newDomain !== this.currentWebsiteDomain) {
@@ -743,38 +784,58 @@ export class AgentService {
 
     try {
       const snap = nativeBridge.getSnapshot();
-      // Transmit the real detected application (Spotify, Chrome, VS Code, etc.)
+      const isIdleNow = this.currentStatus === ActivityState.IDLE;
       const cleanApp =
+        !isIdleNow &&
         this.currentApp &&
         !this.currentApp.toLowerCase().includes('highp') &&
         !this.currentApp.toLowerCase().includes('electron')
           ? this.currentApp
           : '';
 
-      const focusDurSec = Math.max(0, Math.floor((Date.now() - this.currentAppFocusStartTime.getTime()) / 1000));
+      const focusDurSec = isIdleNow
+        ? 0
+        : Math.max(0, Math.floor((Date.now() - this.currentAppFocusStartTime.getTime()) / 1000));
 
-      await axios.post(
+      const res = await axios.post(
         `${this.config.apiUrl}/api/agent/heartbeat`,
         {
           deviceId: this.deviceIdentifier,
           sessionId: this.currentSessionId,
           timestamp: new Date().toISOString(),
           status: this.currentStatus,
-          currentApplication: cleanApp,
-          executable: this.currentProcess,
-          category: this.currentCategory,
-          trackingState: this.currentAppTrackingState,
+          currentApplication: isIdleNow ? '' : cleanApp,
+          executable: isIdleNow ? '' : this.currentProcess,
+          category: isIdleNow ? 'Other' : this.currentCategory,
+          trackingState: isIdleNow ? 'IGNORED' : this.currentAppTrackingState,
           pid: snap.processId || null,
           hwnd: snap.hwnd && snap.hwnd !== '0' ? parseInt(snap.hwnd, 10) : null,
-          startedAt: this.currentAppFocusStartTime.toISOString(),
+          startedAt: isIdleNow ? null : this.currentAppFocusStartTime.toISOString(),
           activeDurationSeconds: focusDurSec,
+          totalActiveSeconds: this.activeSeconds,
+          totalIdleSeconds: this.idleSeconds,
           idleSeconds: snap.idleSeconds,
-          windowTitle: this.currentWindowTitle || cleanApp,
-          website: this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null,
+          windowTitle: isIdleNow ? 'System Idle' : (this.currentWindowTitle || cleanApp),
+          website: isIdleNow ? null : (this.currentWebsiteDomain ? { domain: this.currentWebsiteDomain } : null),
           recentDurationSeconds: this.config.heartbeatIntervalSeconds
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
       );
+
+      if (res.data?.sessionEnded || res.data?.status === 'OFFLINE') {
+        console.log('[AgentService] Server reported session ended. Stopping active tracking and resetting counters.');
+        this.isWorking = false;
+        this.isOnBreak = false;
+        this.currentStatus = ActivityState.OFFLINE;
+        this.currentSessionId = undefined;
+        this.activeSeconds = 0;
+        this.idleSeconds = 0;
+        this.breakSeconds = 0;
+        this.currentApp = 'None';
+        this.currentWindowTitle = '';
+        this.notifyStateChange();
+        return;
+      }
 
       this.isOnline = true;
       this.lastHeartbeatTime = new Date().toLocaleTimeString();
