@@ -144,8 +144,18 @@ export class TrackingEngine {
     this.idleThresholdSeconds = Math.max(15, seconds);
   }
 
+  public getIdleThresholdSeconds(): number {
+    return this.idleThresholdSeconds;
+  }
+
   public setOnStateChange(cb: (state: ActivityState, appName: string, domain?: string) => void): void {
     this.onStateChangeCallback = cb;
+  }
+
+  private onIdleTransitionCallback?: (retroactiveIdleSeconds: number) => void;
+
+  public setOnIdleTransition(cb: (retroactiveIdleSeconds: number) => void): void {
+    this.onIdleTransitionCallback = cb;
   }
 
   private notifyChange(): void {
@@ -275,8 +285,38 @@ export class TrackingEngine {
       if (obs.idleSeconds <= 1) {
         this.currentState = ActivityState.ACTIVE;
         this.notifyChange();
+      } else if (obs.idleSeconds >= this.idleThresholdSeconds) {
+        // User unlocked or resumed, but was physically idle for threshold -> transition to IDLE
+        const nowMonoNs = obs.monotonicTimestampNs !== undefined ? obs.monotonicTimestampNs : process.hrtime.bigint();
+        const idleDurationNs = BigInt(Math.max(0, obs.idleSeconds)) * BigInt(1e9);
+        const idleStartMonotonicNs = nowMonoNs - idleDurationNs;
+        const idleStartTime = this.monotonicToWallClock(idleStartMonotonicNs);
+
+        const idleEventId = uuidv4();
+        this.currentIdleInterval = {
+          eventId: idleEventId,
+          startedAt: idleStartTime,
+          monotonicStartNs: idleStartMonotonicNs
+        };
+
+        this.currentState = ActivityState.IDLE;
+        this.emitEvent({
+          eventId: idleEventId,
+          sessionId: this.sessionId,
+          eventType: ActivityEventType.IDLE_START,
+          timestamp: idleStartTime.toISOString(),
+          wallClockStart: idleStartTime.toISOString(),
+          monotonicStartNs: idleStartMonotonicNs.toString(),
+          durationSeconds: 0,
+          durationMs: 0,
+          clockSource: 'MONOTONIC',
+          source: 'physical_input_monitor'
+        });
+
+        this.notifyChange();
+        return;
       } else {
-        // Still waiting for physical input
+        // Still waiting for physical input (within idle threshold window)
         return;
       }
     }
@@ -285,12 +325,11 @@ export class TrackingEngine {
     const isSystemIdle = obs.idleSeconds >= this.idleThresholdSeconds;
     if (isSystemIdle) {
       if (this.currentState === ActivityState.ACTIVE) {
-        // Active -> Idle transition (Requirement 4)
-        // idleStart = max(lastPhysicalInput + idleThreshold, currentInterval.start)
-        const nowMonoNs = process.hrtime.bigint();
-        const overThresholdSeconds = Math.max(0, obs.idleSeconds - this.idleThresholdSeconds);
-        const overThresholdNs = BigInt(overThresholdSeconds) * BigInt(1e9);
-        let idleStartMonotonicNs = nowMonoNs - overThresholdNs;
+        // Active -> Idle transition
+        // idleStart = exact idle start boundary (now - idleSeconds) clamped to current interval start
+        const nowMonoNs = obs.monotonicTimestampNs !== undefined ? obs.monotonicTimestampNs : process.hrtime.bigint();
+        const idleDurationNs = BigInt(Math.max(0, obs.idleSeconds)) * BigInt(1e9);
+        let idleStartMonotonicNs = nowMonoNs - idleDurationNs;
 
         // Clamp to current app start time so idle transition never precedes app start
         if (this.currentAppInterval) {
@@ -325,6 +364,11 @@ export class TrackingEngine {
           source: 'physical_input_monitor'
         });
 
+        const retroIdleSeconds = Math.max(0, Math.floor(Number((nowMonoNs - idleStartMonotonicNs) / 1_000_000_000n)));
+        if (this.onIdleTransitionCallback) {
+          this.onIdleTransitionCallback(retroIdleSeconds);
+        }
+
         this.notifyChange();
       }
       return; // Stop processing applications while idle
@@ -332,7 +376,8 @@ export class TrackingEngine {
       // Physically active
       if (this.currentState === ActivityState.IDLE) {
         // Idle -> Active transition
-        this.closeIdleInterval();
+        const resumeWall = obs.timestamp ? new Date(obs.timestamp) : undefined;
+        this.closeIdleInterval(resumeWall, obs.monotonicTimestampNs);
         this.currentState = ActivityState.ACTIVE;
         this.notifyChange();
       }
@@ -394,12 +439,14 @@ export class TrackingEngine {
 
     if (isWindowChanged) {
       // Close previous intervals
-      this.closeWebInterval();
-      this.closeAppInterval();
+      const closeWall = obs.timestamp ? new Date(obs.timestamp) : undefined;
+      this.closeWebInterval(closeWall, obs.monotonicTimestampNs);
+      this.closeAppInterval(closeWall, obs.monotonicTimestampNs);
 
       // Start new App interval
       const appEventId = uuidv4();
-      const now = new Date();
+      const now = obs.timestamp ? new Date(obs.timestamp) : new Date();
+      const appStartMonoNs = obs.monotonicTimestampNs !== undefined ? obs.monotonicTimestampNs : process.hrtime.bigint();
       this.currentAppInterval = {
         eventId: appEventId,
         applicationId: resolved.applicationId,
@@ -417,7 +464,7 @@ export class TrackingEngine {
         category: resolved.category,
         trackingState: resolved.trackingState,
         startedAt: now,
-        monotonicStartNs: process.hrtime.bigint()
+        monotonicStartNs: appStartMonoNs
       };
 
       if (resolved.trackingState !== 'IGNORED' && !resolved.ignored) {
@@ -570,6 +617,9 @@ export class TrackingEngine {
     if (!this.isWorking || !this.sessionId) return;
     this.closeWebInterval();
     this.closeAppInterval();
+    if (this.currentState === ActivityState.IDLE) {
+      this.closeIdleInterval();
+    }
 
     const eventId = uuidv4();
     this.emitEvent({
@@ -605,6 +655,9 @@ export class TrackingEngine {
     if (!this.isWorking || !this.sessionId) return;
     this.closeWebInterval();
     this.closeAppInterval();
+    if (this.currentState === ActivityState.IDLE) {
+      this.closeIdleInterval();
+    }
 
     const eventId = uuidv4();
     this.emitEvent({

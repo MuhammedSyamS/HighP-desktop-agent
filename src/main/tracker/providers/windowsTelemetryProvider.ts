@@ -55,7 +55,7 @@ export class WindowsTelemetryProvider implements ITelemetryProvider {
   }
 
   public async queryDirect(): Promise<NormalizedTelemetryObservation> {
-    const raw = await nativeBridge.queryDirect();
+    const raw = await nativeBridge.getFreshSnapshot();
     return this.normalize(raw);
   }
 

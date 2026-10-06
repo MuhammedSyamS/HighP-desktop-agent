@@ -164,6 +164,16 @@ export class AgentService {
       this.notifyStateChange();
     });
 
+    // Hook retroactive idle reallocation
+    this.trackingEngine.setOnIdleTransition((retroIdleSec) => {
+      const falseActiveSec = Math.max(0, retroIdleSec - 1);
+      const adjusted = Math.min(this.activeSeconds, falseActiveSec);
+      this.activeSeconds = Math.max(0, this.activeSeconds - adjusted);
+      this.idleSeconds += retroIdleSec;
+      this.saveCrashRecoveryCheckpoint();
+      this.notifyStateChange();
+    });
+
     // Wire up event-driven cross-platform observations
     this.telemetryProvider.setOnObservation((obs) => {
       this.trackingEngine.processObservation(obs);
@@ -630,6 +640,8 @@ export class AgentService {
       return;
     }
 
+    const prevState = this.trackingEngine.getCurrentState();
+
     // Query cross-platform telemetry provider
     try {
       const obs = await this.telemetryProvider.queryDirect();
@@ -648,7 +660,11 @@ export class AgentService {
     if (currentState === ActivityState.ACTIVE) {
       this.activeSeconds += 1;
     } else if (currentState === ActivityState.IDLE) {
-      this.idleSeconds += 1;
+      // If we just transitioned this tick, onIdleTransition already retroactively reallocated
+      // all seconds up to now. So only tick +1 when already in steady IDLE state.
+      if (prevState === ActivityState.IDLE) {
+        this.idleSeconds += 1;
+      }
     }
 
     this.notifyStateChange();
