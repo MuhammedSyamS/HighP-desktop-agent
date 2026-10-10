@@ -61,7 +61,9 @@ export interface AgentState {
   lastHeartbeatTime?: string;
   lastSyncTime?: string;
   telemetryError?: string;
-  currentWebsite?: { domain: string } | null;
+  currentWebsite?: { domain: string; browser?: string; title?: string } | null;
+  isBrowserActive?: boolean;
+  browserBridgeConnected?: boolean;
   health?: TrackingEngineHealth;
   platform?: string;
   architecture?: string;
@@ -364,6 +366,20 @@ export class AgentService {
     const currentWeb = this.trackingEngine.getCurrentWebsite();
     const currentState = this.trackingEngine.getCurrentState();
 
+    const isBrowser = currentApp ? browserBridge.isBrowserExecutable(currentApp.executable) : false;
+    let websiteInfo = currentWeb ? { domain: currentWeb.domain, browser: currentWeb.browser, title: currentWeb.title } : null;
+
+    if (!websiteInfo && isBrowser && currentApp) {
+      const res = browserBridge.resolveWebsiteState(currentApp.executable, currentApp.windowTitle, currentApp.hwnd);
+      if (res.website) {
+        websiteInfo = {
+          domain: res.website.domain,
+          browser: res.website.browser,
+          title: res.website.title
+        };
+      }
+    }
+
     const appInfo: CurrentApplicationInfo | null = currentApp ? {
       name: currentApp.name,
       executableName: currentApp.executable,
@@ -397,7 +413,9 @@ export class AgentService {
       lastHeartbeatTime: this.lastHeartbeatTime,
       lastSyncTime: this.lastSyncTime,
       telemetryError: this.telemetryError,
-      currentWebsite: currentWeb ? { domain: currentWeb.domain } : null,
+      currentWebsite: websiteInfo,
+      isBrowserActive: isBrowser,
+      browserBridgeConnected: browserBridge.isConnected(),
       health: this.trackingEngine.getHealth(),
       platform: this.telemetryProvider.platform,
       architecture: this.telemetryProvider.architecture,

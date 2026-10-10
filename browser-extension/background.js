@@ -100,22 +100,21 @@ async function transmitEvent(eventType, tabData) {
 
 async function inspectAndReport(eventType = 'HEARTBEAT') {
   try {
-    const lastWin = await chrome.windows.getLastFocused({ populate: false });
-    if (!lastWin || !lastWin.focused) {
-      // Browser window is unfocused / blurred
-      await transmitEvent('WINDOW_BLURRED', { active: false });
-      return;
+    let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tabs || tabs.length === 0) {
+      tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    }
+    if (!tabs || tabs.length === 0) {
+      tabs = await chrome.tabs.query({ active: true });
     }
 
-    const [activeTab] = await chrome.tabs.query({ active: true, windowId: lastWin.id });
+    const activeTab = tabs && tabs.length > 0 ? tabs[0] : null;
     if (!activeTab || !activeTab.url) {
-      await transmitEvent('NO_ACTIVE_TAB', { active: false, windowId: lastWin.id });
       return;
     }
 
     const domain = normalizeDomain(activeTab.url);
     if (!domain) {
-      await transmitEvent('INTERNAL_PAGE', { active: false, windowId: lastWin.id, tabId: activeTab.id });
       return;
     }
 
@@ -134,8 +133,7 @@ async function inspectAndReport(eventType = 'HEARTBEAT') {
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
     const tab = await chrome.tabs.get(activeInfo.tabId);
-    const win = await chrome.windows.get(activeInfo.windowId);
-    if (win && win.focused && tab && tab.url) {
+    if (tab && tab.url) {
       const domain = normalizeDomain(tab.url);
       if (domain) {
         await transmitEvent('TAB_ACTIVATED', {
@@ -155,7 +153,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 // 2. Instant Navigation / URL updated
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (tab.active && (changeInfo.url || changeInfo.status === 'complete')) {
+  if (tab.active && (changeInfo.url || changeInfo.status === 'complete' || changeInfo.title)) {
     const domain = normalizeDomain(tab.url);
     if (domain) {
       await transmitEvent('NAVIGATED', {
@@ -188,10 +186,11 @@ chrome.tabs.onRemoved.addListener(async (_tabId, removeInfo) => {
   }
 });
 
-// 5. Periodic Heartbeat (every 5 seconds) as liveness health-check only
+// 5. Periodic Heartbeat (every 2.5 seconds) to ensure fresh telemetry
 setInterval(async () => {
   await inspectAndReport('HEARTBEAT');
-}, 5000);
+}, 2500);
 
 // Initial broadcast on start
 inspectAndReport('STARTUP');
+

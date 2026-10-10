@@ -524,6 +524,166 @@ export const DEFAULT_REGISTRY_ENTRIES: TrackedApplicationEntry[] = [
     ignored: false,
     isSystemApp: false
   },
+  {
+    applicationId: 'notepad',
+    name: 'Notepad',
+    executableNames: ['notepad.exe', 'notepad', 'notepadapp.exe'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'notepad-plus-plus',
+    name: 'Notepad++',
+    executableNames: ['notepad++.exe', 'notepad++'],
+    category: 'Development',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'wordpad',
+    name: 'WordPad',
+    executableNames: ['wordpad.exe', 'write.exe'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'microsoft-powerpoint',
+    name: 'Microsoft PowerPoint',
+    executableNames: ['powerpnt.exe'],
+    bundleIds: ['com.microsoft.Powerpoint'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'microsoft-outlook',
+    name: 'Microsoft Outlook',
+    executableNames: ['outlook.exe', 'olk.exe'],
+    bundleIds: ['com.microsoft.Outlook'],
+    category: 'Communication',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'microsoft-onenote',
+    name: 'Microsoft OneNote',
+    executableNames: ['onenote.exe', 'onenotem.exe'],
+    bundleIds: ['com.microsoft.onenote.mac'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'adobe-acrobat',
+    name: 'Adobe Acrobat Reader',
+    executableNames: ['acrobat.exe', 'acrord32.exe', 'acroread.exe'],
+    bundleIds: ['com.adobe.Reader', 'com.adobe.Acrobat.Pro'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'paint',
+    name: 'Paint',
+    executableNames: ['mspaint.exe', 'paint.exe', 'pbrush.exe'],
+    category: 'Design',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'snipping-tool',
+    name: 'Snipping Tool',
+    executableNames: ['snippingtool.exe', 'screensketch.exe'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'file-archiver',
+    name: '7-Zip / WinRAR',
+    executableNames: ['7zfm.exe', '7z.exe', 'winrar.exe'],
+    category: 'Productivity',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'opera',
+    name: 'Opera',
+    executableNames: ['opera.exe', 'operagx.exe', 'opera'],
+    bundleIds: ['com.operasoftware.Opera'],
+    category: 'Browsers',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'vivaldi',
+    name: 'Vivaldi',
+    executableNames: ['vivaldi.exe', 'vivaldi'],
+    bundleIds: ['com.vivaldi.Vivaldi'],
+    category: 'Browsers',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'windows-settings',
+    name: 'Windows Settings',
+    executableNames: ['systemsettings.exe', 'systemsettingsadminflows.exe'],
+    category: 'System',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'task-manager',
+    name: 'Task Manager',
+    executableNames: ['taskmgr.exe'],
+    category: 'System',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'remote-desktop',
+    name: 'Remote Desktop',
+    executableNames: ['mstsc.exe'],
+    category: 'System',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'datagrip',
+    name: 'DataGrip',
+    executableNames: ['datagrip64.exe', 'datagrip.exe', 'datagrip'],
+    bundleIds: ['com.jetbrains.datagrip'],
+    category: 'Development',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
+  {
+    applicationId: 'pgadmin',
+    name: 'pgAdmin',
+    executableNames: ['pgadmin4.exe', 'pgadmin.exe'],
+    category: 'Development',
+    tracked: true,
+    ignored: false,
+    isSystemApp: false
+  },
 
   // Media
   {
@@ -775,14 +935,135 @@ export function resolveApplication(
     }
   }
 
+  // 4.5. Title-based Resolution for UWP Wrappers (ApplicationFrameHost) and Generic Containers
+  const cleanTitle = (title || '').trim();
+  const lowerTitle = cleanTitle.toLowerCase();
+  const isWrapperOrUnknown =
+    normalizedStem === 'applicationframehost' ||
+    normalizedStem === 'unknown' ||
+    normalizedStem === 'electron' ||
+    normalizedStem === '';
+
+  if (isWrapperOrUnknown && cleanTitle) {
+    // Check known application title matches
+    const titleMatches: Array<{ pattern: RegExp; id: string; name: string; category: string }> = [
+      { pattern: /\b(windows\s+)?settings\b/i, id: 'windows-settings', name: 'Windows Settings', category: 'System' },
+      { pattern: /\bcalculator\b/i, id: 'calculator', name: 'Calculator', category: 'Productivity' },
+      { pattern: /\b(microsoft\s+)?photos\b/i, id: 'microsoft-photos', name: 'Microsoft Photos', category: 'Media' },
+      { pattern: /\b(snipping\s+tool|snip\s*&\s*sketch)\b/i, id: 'snipping-tool', name: 'Snipping Tool', category: 'Productivity' },
+      { pattern: /\bsticky\s+notes\b/i, id: 'sticky-notes', name: 'Sticky Notes', category: 'Productivity' },
+      { pattern: /\b(windows\s+)?terminal\b/i, id: 'terminal', name: 'Windows Terminal', category: 'Development' },
+      { pattern: /\bpowershell\b/i, id: 'terminal', name: 'PowerShell', category: 'Development' },
+      { pattern: /\b(command\s+prompt|cmd\.exe)\b/i, id: 'terminal', name: 'Command Prompt', category: 'Development' },
+      { pattern: /\b(google\s+)?chrome\b/i, id: 'google-chrome', name: 'Google Chrome', category: 'Browsers' },
+      { pattern: /\bbrave\b/i, id: 'brave', name: 'Brave', category: 'Browsers' },
+      { pattern: /\bmicrosoft\s+edge\b/i, id: 'microsoft-edge', name: 'Microsoft Edge', category: 'Browsers' },
+      { pattern: /\b(mozilla\s+)?firefox\b/i, id: 'mozilla-firefox', name: 'Mozilla Firefox', category: 'Browsers' },
+      { pattern: /\bvisual\s+studio\s+code\b/i, id: 'visual-studio-code', name: 'Visual Studio Code', category: 'Development' },
+      { pattern: /\bantigravity\b/i, id: 'antigravity-ide', name: 'Antigravity IDE', category: 'Development' },
+      { pattern: /\bcursor\b/i, id: 'cursor', name: 'Cursor', category: 'Development' },
+      { pattern: /\bnotepad\+\+/i, id: 'notepad-plus-plus', name: 'Notepad++', category: 'Development' },
+      { pattern: /\bnotepad\b/i, id: 'notepad', name: 'Notepad', category: 'Productivity' },
+      { pattern: /\bword\b/i, id: 'microsoft-word', name: 'Microsoft Word', category: 'Productivity' },
+      { pattern: /\bexcel\b/i, id: 'microsoft-excel', name: 'Microsoft Excel', category: 'Productivity' },
+      { pattern: /\bpowerpoint\b/i, id: 'microsoft-powerpoint', name: 'Microsoft PowerPoint', category: 'Productivity' },
+      { pattern: /\boutlook\b/i, id: 'microsoft-outlook', name: 'Microsoft Outlook', category: 'Communication' },
+      { pattern: /\bslack\b/i, id: 'slack', name: 'Slack', category: 'Communication' },
+      { pattern: /\bmicrosoft\s+teams\b/i, id: 'microsoft-teams', name: 'Microsoft Teams', category: 'Communication' },
+      { pattern: /\bdiscord\b/i, id: 'discord', name: 'Discord', category: 'Communication' },
+      { pattern: /\btelegram\b/i, id: 'telegram', name: 'Telegram', category: 'Communication' },
+      { pattern: /\bwhatsapp\b/i, id: 'whatsapp', name: 'WhatsApp', category: 'Communication' },
+      { pattern: /\bzoom\b/i, id: 'zoom', name: 'Zoom', category: 'Communication' },
+      { pattern: /\bfigma\b/i, id: 'figma', name: 'Figma', category: 'Design' },
+      { pattern: /\bcanva\b/i, id: 'canva', name: 'Canva', category: 'Design' },
+      { pattern: /\bspotify\b/i, id: 'spotify', name: 'Spotify', category: 'Media' },
+      { pattern: /\bvlc\b/i, id: 'vlc-media-player', name: 'VLC Media Player', category: 'Media' }
+    ];
+
+    for (const tm of titleMatches) {
+      if (tm.pattern.test(cleanTitle)) {
+        return {
+          applicationId: tm.id,
+          name: tm.name,
+          applicationName: tm.name,
+          executableName: rawExe || `${tm.id}.exe`,
+          processName: rawExe || `${tm.id}.exe`,
+          executablePath: normalizedPath,
+          bundleId,
+          desktopEntry,
+          processId: pid,
+          category: tm.category,
+          trackingState: 'TRACKED',
+          tracked: true,
+          ignored: false,
+          isUnknown: false,
+          isRecognized: true,
+          confidence: 'high'
+        };
+      }
+    }
+
+    // Attempt to extract trailing application name after separator (e.g. "Document1 - WordPad" -> "WordPad")
+    const sepMatch = cleanTitle.match(/(?:[-–—|]\s*)([A-Za-z0-9\s+._]{2,30})$/);
+    if (sepMatch && sepMatch[1]) {
+      const extractedName = sepMatch[1].trim();
+      const extractedSlug = slugify(extractedName);
+      if (extractedSlug && extractedSlug !== 'unknown' && extractedSlug !== 'desktop') {
+        const foundInDefault = DEFAULT_REGISTRY_ENTRIES.find((d) => slugify(d.name) === extractedSlug || d.executableNames.some((e) => normalizeExeStem(e) === extractedSlug));
+        if (foundInDefault) {
+          return {
+            applicationId: foundInDefault.applicationId || slugify(foundInDefault.name),
+            name: foundInDefault.name,
+            applicationName: foundInDefault.name,
+            executableName: rawExe || foundInDefault.name,
+            processName: rawExe || foundInDefault.name,
+            executablePath: normalizedPath,
+            bundleId,
+            desktopEntry,
+            processId: pid,
+            category: foundInDefault.category,
+            trackingState: foundInDefault.tracked ? 'TRACKED' : 'IGNORED',
+            tracked: Boolean(foundInDefault.tracked),
+            ignored: Boolean(foundInDefault.ignored),
+            isUnknown: false,
+            isRecognized: true,
+            confidence: 'high'
+          };
+        }
+      }
+    }
+  }
+
   // 5. Fallback for Unknown Application
   // Critical invariant: Unknown applications are preserved and tracked under 'Other' / 'UNKNOWN'
-  const baseName = normalizedStem || lowerBundle || 'unknown';
-  const displayName = baseName && baseName !== 'unknown' && baseName !== 'idle'
-    ? baseName.charAt(0).toUpperCase() + baseName.slice(1)
-    : 'Unknown Application';
+  const isGenericUnknown = !normalizedStem || normalizedStem === 'unknown' || normalizedStem === 'idle';
+  let displayName = 'Unknown Application';
+  let inferredCategory = 'Other';
 
-  const generatedAppId = slugify(displayName);
+  if (!isGenericUnknown) {
+    displayName = normalizedStem.charAt(0).toUpperCase() + normalizedStem.slice(1);
+
+    const lowerStem = normalizedStem.toLowerCase();
+    if (/code|dev|studio|git|sql|db|term|cli|sdk|debug|compiler|ide|vim|emacs|query/.test(lowerStem)) {
+      inferredCategory = 'Development';
+    } else if (/doc|sheet|calc|note|pdf|text|office|task|todo|word|excel|presentation|writer/.test(lowerStem)) {
+      inferredCategory = 'Productivity';
+    } else if (/chat|talk|call|meet|mail|msg|teams|slack|discord|zoom|telegram|whatsapp|phone/.test(lowerStem)) {
+      inferredCategory = 'Communication';
+    } else if (/draw|paint|design|photo|image|video|3d|blend|render|art|cad|sketch/.test(lowerStem)) {
+      inferredCategory = 'Design';
+    } else if (/chrome|edge|firefox|browser|brave|opera|vivaldi|arc|tor|web|surf/.test(lowerStem)) {
+      inferredCategory = 'Browsers';
+    } else if (/music|media|sound|audio|player|spotify|vlc|stream|radio|movie/.test(lowerStem)) {
+      inferredCategory = 'Media';
+    }
+  } else if (cleanTitle) {
+    if (cleanTitle !== 'Program Manager' && cleanTitle !== 'Taskbar' && cleanTitle !== 'Desktop') {
+      displayName = cleanTitle.length > 36 ? cleanTitle.slice(0, 36) + '...' : cleanTitle;
+    }
+  }
+
+  const generatedAppId = slugify(displayName) || 'unknown-application';
 
   return {
     applicationId: generatedAppId,
@@ -794,7 +1075,7 @@ export function resolveApplication(
     bundleId,
     desktopEntry,
     processId: pid,
-    category: 'Other',
+    category: inferredCategory,
     trackingState: 'UNKNOWN',
     tracked: true,
     ignored: false,

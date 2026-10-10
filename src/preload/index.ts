@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   getAutostart: () => ipcRenderer.invoke('agent:getAutostart'),
   setAutostart: (enabled: boolean) => ipcRenderer.invoke('agent:setAutostart', { enabled }),
   openExtensionFolder: () => ipcRenderer.invoke('agent:openExtensionFolder'),
+  getExtensionPath: () => ipcRenderer.invoke('agent:getExtensionPath'),
   onStateUpdate: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('agent:state-update', handler);

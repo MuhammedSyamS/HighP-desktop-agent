@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="app-container">
@@ -17,37 +17,40 @@
         <div class="logo-icon">⚡</div>
         <div>
           <h1 class="brand-title">HighP Agent</h1>
-          <span class="brand-subtitle">Transparent Work Activity</span>
+          <span class="brand-subtitle">Enterprise Work Transparency</span>
         </div>
       </div>
       <div id="connectionStatus" class="connection-pill online">
-        <span class="dot"></span> Online
+        <span class="dot"></span> <span id="connectionText">Online</span>
       </div>
     </header>
 
     <!-- Login View (Hidden when logged in) -->
     <section id="loginView" class="view-section">
       <div class="card login-card">
-        <h2>Sign In to Work</h2>
-        <p class="card-desc">Authenticate with your employee credentials to track attendance and session activity.</p>
+        <div class="login-header">
+          <div class="login-badge">AUTHENTICATION</div>
+          <h2>Sign In to Work</h2>
+          <p class="card-desc">Connect with your workforce account to log attendance and session activity.</p>
+        </div>
         
         <form id="loginForm">
           <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="apiUrl" style="margin-bottom: 0;">Server API URL</label>
-              <div style="display: flex; gap: 4px;">
-                <button type="button" class="btn" style="padding: 2px 6px; font-size: 10px; background: rgba(99,102,241,0.2); color: #818cf8; border: 1px solid rgba(99,102,241,0.4);" onclick="document.getElementById('apiUrl').value='http://localhost:5001'">⚡ Localhost (5001)</button>
-                <button type="button" class="btn" style="padding: 2px 6px; font-size: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; border: 1px solid rgba(255,255,255,0.1);" onclick="document.getElementById('apiUrl').value='https://highp-agent-backend.onrender.com'">🌐 Cloud</button>
+            <div class="field-header">
+              <label for="apiUrl">Server API URL</label>
+              <div class="quick-presets">
+                <button type="button" class="preset-chip" onclick="document.getElementById('apiUrl').value='http://localhost:5001'">⚡ Localhost (5001)</button>
+                <button type="button" class="preset-chip" onclick="document.getElementById('apiUrl').value='https://highp-agent-backend.onrender.com'">🌐 Cloud</button>
               </div>
             </div>
-            <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" required>
+            <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" required placeholder="https://your-server.com">
           </div>
           <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="email" style="margin-bottom: 0;">Work Email</label>
-              <div style="display: flex; gap: 4px;">
-                <button type="button" class="btn" style="padding: 2px 6px; font-size: 10px; background: rgba(99,102,241,0.25); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.5);" onclick="document.getElementById('email').value='shamsaifudheen@gmail.com';document.getElementById('password').value='Password@123'">⚡ Sham (HR)</button>
-                <button type="button" class="btn" style="padding: 2px 6px; font-size: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; border: 1px solid rgba(255,255,255,0.1);" onclick="document.getElementById('email').value='highphaus@gmail.com';document.getElementById('password').value='Password@123'">⚡ Midhun</button>
+            <div class="field-header">
+              <label for="email">Work Email</label>
+              <div class="quick-presets">
+                <button type="button" class="preset-chip" onclick="document.getElementById('email').value='shamsaifudheen@gmail.com';document.getElementById('password').value='Password@123'">⚡ Sham (HR)</button>
+                <button type="button" class="preset-chip" onclick="document.getElementById('email').value='highphaus@gmail.com';document.getElementById('password').value='Password@123'">⚡ Midhun</button>
               </div>
             </div>
             <input type="email" id="email" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required>
@@ -56,7 +59,9 @@
             <label for="password">Password</label>
             <input type="password" id="password" value="Password@123" placeholder="••••••••" required>
           </div>
-          <button type="submit" id="loginBtn" class="btn btn-primary">Sign In & Connect</button>
+          <button type="submit" id="loginBtn" class="btn btn-primary btn-glow">
+            <span id="loginBtnText">Sign In & Connect</span>
+          </button>
           <div id="loginError" class="error-msg"></div>
         </form>
       </div>
@@ -68,9 +73,9 @@
       <div class="card profile-card">
         <div class="user-info">
           <div class="avatar" id="userAvatar">E</div>
-          <div>
+          <div class="user-meta">
             <h3 id="userName">Employee</h3>
-            <p id="userCompany" class="subtext">Workforce Portal</p>
+            <p id="userCompany" class="subtext">Workforce Portal • Registered</p>
           </div>
         </div>
         <button id="logoutBtn" class="btn btn-ghost btn-sm" title="Log Out">Log Out</button>
@@ -79,29 +84,58 @@
       <!-- Live Monitoring Status Card -->
       <div class="card status-card">
         <div class="status-header">
-          <span class="label">CURRENT STATUS</span>
+          <div class="status-title-group">
+            <span class="label">LIVE WORK MONITOR</span>
+            <span class="live-pulse-badge"><span class="pulse-dot"></span> REAL-TIME</span>
+          </div>
           <div id="statusBadge" class="status-badge status-offline">OFFLINE</div>
         </div>
 
+        <!-- Foreground Application Box -->
         <div class="active-app-box">
           <div class="app-icon" id="appIcon">💻</div>
           <div class="app-details">
-            <span class="label">ACTIVE FOREGROUND APP</span>
+            <div class="app-label-row">
+              <span class="label">ACTIVE FOREGROUND APPLICATION</span>
+              <span id="appCategoryBadge" class="cat-pill">System</span>
+            </div>
             <h4 id="currentAppName">Detecting active application...</h4>
+            <div id="appProcessRow" class="app-process-info">
+              <span class="process-tag" id="appProcessTag">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Website Box (Prominent & Real-Time) -->
+        <div id="activeWebsiteBox" class="active-website-box hidden">
+          <div class="web-icon">🌐</div>
+          <div class="web-details">
+            <div class="web-label-row">
+              <span class="label">ACTIVE BROWSER WEBSITE</span>
+              <span id="webTrackingSourceBadge" class="source-pill">Companion Extension</span>
+            </div>
+            <div class="web-domain-row">
+              <h4 id="currentWebDomain">None</h4>
+              <span class="web-live-tag">LIVE</span>
+            </div>
+            <span id="currentWebTitle" class="web-page-title">Page Title</span>
           </div>
         </div>
 
         <!-- Timer Grid -->
         <div class="timer-grid">
           <div class="timer-item active-time">
+            <div class="timer-indicator-dot"></div>
             <span class="timer-label">ACTIVE TIME</span>
             <span class="timer-val" id="activeTimer">00:00:00</span>
           </div>
           <div class="timer-item idle-time">
+            <div class="timer-indicator-dot"></div>
             <span class="timer-label">IDLE TIME</span>
             <span class="timer-val" id="idleTimer">00:00:00</span>
           </div>
           <div class="timer-item break-time">
+            <div class="timer-indicator-dot"></div>
             <span class="timer-label">BREAK TIME</span>
             <span class="timer-val" id="breakTimer">00:00:00</span>
           </div>
@@ -109,70 +143,112 @@
 
         <!-- Primary Controls -->
         <div class="action-buttons">
-          <button id="startWorkBtn" class="btn btn-success btn-lg">▶ Start Work</button>
-          <button id="endWorkBtn" class="btn btn-danger btn-lg hidden">■ End Work</button>
+          <button id="startWorkBtn" class="btn btn-success btn-lg btn-glow">
+            <span class="btn-icon">▶</span> Start Work Session
+          </button>
+          <button id="endWorkBtn" class="btn btn-danger btn-lg hidden">
+            <span class="btn-icon">■</span> End Work Session
+          </button>
           
           <div id="breakControls" class="break-controls hidden">
-            <select id="breakReasonSelect" class="break-select">
-              <option value="LUNCH">🥪 Lunch Break</option>
-              <option value="COFFEE">☕ Coffee Break</option>
-              <option value="PERSONAL">🚶 Personal Break</option>
-              <option value="MEETING">👥 Offline Meeting</option>
-              <option value="OTHER">⏳ Other</option>
-            </select>
+            <div class="break-select-wrap">
+              <select id="breakReasonSelect" class="break-select">
+                <option value="LUNCH">🥪 Lunch Break</option>
+                <option value="COFFEE">☕ Coffee Break</option>
+                <option value="PERSONAL">🚶 Personal Break</option>
+                <option value="MEETING">👥 Offline Meeting</option>
+                <option value="OTHER">⏳ Other</option>
+              </select>
+            </div>
             <button id="startBreakBtn" class="btn btn-warning">Take Break</button>
             <button id="endBreakBtn" class="btn btn-success hidden">Resume Work</button>
           </div>
         </div>
       </div>
 
-      <!-- Cross-Platform Telemetry Diagnostics Panel (Requirements #5 & #20) -->
+      <!-- Browser Companion Extension Card -->
+      <div class="card extension-card">
+        <div class="ext-header">
+          <div class="ext-title-box">
+            <div class="ext-icon-badge">🧩</div>
+            <div>
+              <div class="ext-heading-row">
+                <h4 class="ext-title">Browser Extension Companion</h4>
+                <span id="extLivePill" class="ext-live-pill waiting">Standby</span>
+              </div>
+              <p class="ext-subtitle">Per-tab domain tracking for Chrome, Brave & Edge</p>
+            </div>
+          </div>
+          <div class="ext-btn-group">
+            <button id="copyExtPathBtn" class="btn btn-ghost btn-sm" title="Copy extension path to clipboard">📋 Copy Path</button>
+            <button id="openExtFolderBtn" class="btn btn-secondary btn-sm" title="Open extension files in Windows Explorer">📂 Open Folder</button>
+          </div>
+        </div>
+        <div class="ext-guide">
+          <div class="ext-step"><span class="step-num">1</span> Open <code>chrome://extensions</code> or <code>brave://extensions</code></div>
+          <div class="ext-step"><span class="step-num">2</span> Enable <strong>Developer mode</strong> (toggle top-right)</div>
+          <div class="ext-step"><span class="step-num">3</span> Click <strong>Load unpacked</strong> & choose the opened folder</div>
+        </div>
+        <div id="extFolderStatus" class="ext-status-msg hidden"></div>
+      </div>
+
+      <!-- Collapsible Diagnostics & Telemetry Accordion -->
       <div class="card diag-card">
-        <div class="diag-header">
-          <div>
-            <span class="label">CROSS-PLATFORM TELEMETRY & CAPABILITIES</span>
-            <div id="diagPlatformBadge" class="diag-platform-badge">Detecting...</div>
+        <button type="button" id="diagToggleBtn" class="diag-toggle-btn" aria-expanded="false">
+          <div class="diag-toggle-left">
+            <span class="diag-gear-icon">⚙️</span>
+            <div>
+              <span class="diag-toggle-title">Telemetry Diagnostics & Capabilities</span>
+              <span id="diagPlatformBadge" class="diag-platform-badge">Detecting...</span>
+            </div>
           </div>
-          <span id="diagSyncPill" class="sync-pill synced">Synced</span>
-        </div>
-
-        <!-- Permission Alert Banner -->
-        <div id="permissionWarningBanner" class="permission-warning-banner hidden">
-          <div class="perm-title">⚠️ PERMISSION REQUIRED</div>
-          <div id="permissionWarningText" class="perm-desc">Elevated permissions are required to accurately capture window titles on this system.</div>
-        </div>
-
-        <div class="diag-grid">
-          <div class="diag-row"><span class="diag-k">Platform:</span><span id="diagPlatform" class="diag-v">-</span></div>
-          <div class="diag-row"><span class="diag-k">Architecture:</span><span id="diagArch" class="diag-v">-</span></div>
-          <div class="diag-row"><span class="diag-k">Agent Version:</span><span id="diagVersion" class="diag-v">2.0.0</span></div>
-          <div class="diag-row"><span class="diag-k">Connection:</span><span id="diagConn" class="diag-v">Connected</span></div>
-          <div class="diag-row"><span class="diag-k">Server:</span><span id="diagServer" class="diag-v">Connected</span></div>
-          <div class="diag-row"><span class="diag-k">Device ID:</span><span id="diagDevice" class="diag-v">Registered</span></div>
-          <div class="diag-row"><span class="diag-k">Session:</span><span id="diagSession" class="diag-v">No Active Session</span></div>
-          <div class="diag-row"><span class="diag-k">Current App:</span><span id="diagApp" class="diag-v">-</span></div>
-          <div class="diag-row"><span class="diag-k">Native Provider:</span><span id="diagProvider" class="diag-v">Checking...</span></div>
-          <div class="diag-row"><span class="diag-k">Offline Queue:</span><span id="diagQueue" class="diag-v">HEALTHY (0)</span></div>
-          <div class="diag-row"><span class="diag-k">Last Sync:</span><span id="diagSync" class="diag-v">Never</span></div>
-          <div class="diag-row"><span class="diag-k">Last Heartbeat:</span><span id="diagHeartbeat" class="diag-v">Never</span></div>
-        </div>
-
-        <!-- Platform Capability Matrix -->
-        <div class="capability-section">
-          <div class="capability-title">OS CAPABILITY MATRIX</div>
-          <div class="capability-grid">
-            <div class="cap-item"><span>Foreground App</span><span id="capForeground" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Window Identity</span><span id="capWindowId" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Window Title</span><span id="capWindowTitle" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Idle Detection</span><span id="capIdle" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Lock Detection</span><span id="capLock" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Sleep Detection</span><span id="capSleep" class="cap-tag pass">YES</span></div>
-            <div class="cap-item"><span>Browser Tracking</span><span id="capBrowser" class="cap-tag pass">YES</span></div>
+          <div class="diag-toggle-right">
+            <span id="diagSyncPill" class="sync-pill synced">Synced</span>
+            <span class="chevron-icon">▼</span>
           </div>
-        </div>
+        </button>
 
-        <div id="telemetryErrorAlert" class="telemetry-error-alert hidden">
-          ⚠️ <strong>Telemetry Notice:</strong> <span id="telemetryErrorText"></span>
+        <div id="diagContent" class="diag-content hidden">
+          <!-- Permission Alert Banner -->
+          <div id="permissionWarningBanner" class="permission-warning-banner hidden">
+            <div class="perm-title">⚠️ PERMISSION REQUIRED</div>
+            <div id="permissionWarningText" class="perm-desc">Elevated permissions are required to accurately capture window titles on this system.</div>
+          </div>
+
+          <div class="diag-grid">
+            <div class="diag-row"><span class="diag-k">Platform:</span><span id="diagPlatform" class="diag-v">-</span></div>
+            <div class="diag-row"><span class="diag-k">Architecture:</span><span id="diagArch" class="diag-v">-</span></div>
+            <div class="diag-row"><span class="diag-k">Agent Version:</span><span id="diagVersion" class="diag-v">2.0.0</span></div>
+            <div class="diag-row"><span class="diag-k">Connection:</span><span id="diagConn" class="diag-v">Connected</span></div>
+            <div class="diag-row"><span class="diag-k">Server:</span><span id="diagServer" class="diag-v">Connected</span></div>
+            <div class="diag-row"><span class="diag-k">Device ID:</span><span id="diagDevice" class="diag-v">Registered</span></div>
+            <div class="diag-row"><span class="diag-k">Session:</span><span id="diagSession" class="diag-v">No Active Session</span></div>
+            <div class="diag-row"><span class="diag-k">Current App:</span><span id="diagApp" class="diag-v">-</span></div>
+            <div class="diag-row"><span class="diag-k">Current Website:</span><span id="diagWeb" class="diag-v">None</span></div>
+            <div class="diag-row"><span class="diag-k">Native Provider:</span><span id="diagProvider" class="diag-v">Checking...</span></div>
+            <div class="diag-row"><span class="diag-k">Browser Bridge:</span><span id="diagBrowserBridge" class="diag-v">Standby (Port 41789)</span></div>
+            <div class="diag-row"><span class="diag-k">Offline Queue:</span><span id="diagQueue" class="diag-v">HEALTHY (0)</span></div>
+            <div class="diag-row"><span class="diag-k">Last Sync:</span><span id="diagSync" class="diag-v">Never</span></div>
+            <div class="diag-row"><span class="diag-k">Last Heartbeat:</span><span id="diagHeartbeat" class="diag-v">Never</span></div>
+          </div>
+
+          <!-- Platform Capability Matrix -->
+          <div class="capability-section">
+            <div class="capability-title">OS CAPABILITY MATRIX</div>
+            <div class="capability-grid">
+              <div class="cap-item"><span>Foreground App</span><span id="capForeground" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Window Identity</span><span id="capWindowId" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Window Title</span><span id="capWindowTitle" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Idle Detection</span><span id="capIdle" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Lock Detection</span><span id="capLock" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Sleep Detection</span><span id="capSleep" class="cap-tag pass">YES</span></div>
+              <div class="cap-item"><span>Browser Tracking</span><span id="capBrowser" class="cap-tag pass">YES</span></div>
+            </div>
+          </div>
+
+          <div id="telemetryErrorAlert" class="telemetry-error-alert hidden">
+            ⚠️ <strong>Telemetry Notice:</strong> <span id="telemetryErrorText"></span>
+          </div>
         </div>
       </div>
 
@@ -180,26 +256,6 @@
       <div id="offlineQueueBar" class="queue-bar hidden">
         <span>🔄 Queued Offline Events: <strong id="queueCount">0</strong></span>
         <span class="queue-status">Syncing automatically</span>
-      </div>
-
-      <!-- Browser Companion Extension Setup Card -->
-      <div class="card extension-card">
-        <div class="ext-header">
-          <div class="ext-title-box">
-            <span class="ext-icon">🧩</span>
-            <div>
-              <h4 class="ext-title">Browser Extension Companion</h4>
-              <p class="ext-subtitle">Active tab domain tracking for Chrome, Brave & Edge</p>
-            </div>
-          </div>
-          <button id="openExtFolderBtn" class="btn btn-secondary btn-sm" title="Open extension files in Windows Explorer">📂 Open Folder</button>
-        </div>
-        <div class="ext-guide">
-          <div class="ext-step"><span>1</span> Open <code>chrome://extensions</code> or <code>brave://extensions</code></div>
-          <div class="ext-step"><span>2</span> Toggle <strong>Developer mode</strong> (top right)</div>
-          <div class="ext-step"><span>3</span> Click <strong>Load unpacked</strong> & choose the opened folder</div>
-        </div>
-        <div id="extFolderStatus" class="ext-status-msg hidden"></div>
       </div>
 
       <!-- Transparency & Privacy Disclosure -->

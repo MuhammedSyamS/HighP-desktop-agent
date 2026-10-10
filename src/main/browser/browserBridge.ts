@@ -401,8 +401,14 @@ export class BrowserBridge {
     const title = windowTitle.trim();
     if (!title) return null;
 
-    const domainRegex = /\b(?:https?:\/\/)?([a-zA-Z0-9-]+\.(?:com|org|net|io|so|app|ai|dev|co|in|edu|gov|xyz|live|tech|agency|cloud|store|info|me|online|site|tv|cc)(?::[0-9]+)?)\b/i;
-    const match = title.match(domainRegex);
+    // Strip common browser title suffixes
+    const strippedTitle = title
+      .replace(/\s*[-–—|]\s*(Google Chrome|Brave|Microsoft\s*Edge|Mozilla Firefox|Opera|Vivaldi|Arc)(\s*and\s*\d+\s*more\s*pages)?$/i, '')
+      .trim();
+
+    // 1. Direct domain match in title (com, org, net, io, app, ai, dev, etc.)
+    const domainRegex = /\b(?:https?:\/\/)?([a-zA-Z0-9-]+\.(?:com|org|net|io|so|app|ai|dev|co|in|edu|gov|xyz|live|tech|agency|cloud|store|info|me|online|site|tv|cc|ca|uk|us|de|fr|jp|br|au|ru|it|nl|eu|world|pro|space|fun|club|design|shop|top|vip|work|mobi|gg|link)(?::[0-9]+)?)\b/i;
+    const match = title.match(domainRegex) || strippedTitle.match(domainRegex);
     if (match && match[1]) {
       const rawDomain = match[1].toLowerCase().replace(/^www\./, '');
       const cleanHost = rawDomain.split(':')[0];
@@ -411,12 +417,14 @@ export class BrowserBridge {
         !cleanHost.includes('edge') &&
         !cleanHost.includes('firefox') &&
         !cleanHost.includes('brave') &&
-        !cleanHost.includes('opera')
+        !cleanHost.includes('opera') &&
+        !cleanHost.includes('vivaldi')
       ) {
         return cleanHost;
       }
     }
 
+    // 2. Localhost & Private IP ports
     const localMatch = title.match(/\b(localhost(?::[0-9]+)?)\b/i);
     if (localMatch && localMatch[1]) {
       return localMatch[1].toLowerCase();
@@ -427,18 +435,30 @@ export class BrowserBridge {
     }
 
     const lower = title.toLowerCase();
+    const lowerStripped = strippedTitle.toLowerCase();
+
+    // 3. Known Top Platforms & Work Websites
     if (lower.includes('github')) return 'github.com';
     if (lower.includes('gitlab')) return 'gitlab.com';
     if (lower.includes('bitbucket')) return 'bitbucket.org';
     if (lower.includes('stackoverflow') || lower.includes('stack overflow')) return 'stackoverflow.com';
     if (lower.includes('chatgpt') || lower.includes('openai')) return 'chatgpt.com';
     if (lower.includes('claude') || lower.includes('anthropic')) return 'claude.ai';
+    if (lower.includes('perplexity')) return 'perplexity.ai';
+    if (lower.includes('deepseek')) return 'deepseek.com';
+    if (lower.includes('leetcode')) return 'leetcode.com';
+    if (lower.includes('hackerrank')) return 'hackerrank.com';
+    if (lower.includes('geeksforgeeks')) return 'geeksforgeeks.org';
+    if (lower.includes('mdn web docs') || lower.includes('developer.mozilla')) return 'developer.mozilla.org';
+    if (lower.includes('w3schools')) return 'w3schools.com';
     if (lower.includes('vercel')) return 'vercel.com';
     if (lower.includes('netlify')) return 'netlify.com';
     if (lower.includes('render.com') || lower.includes('render dashboard')) return 'render.com';
+    if (lower.includes('supabase')) return 'supabase.com';
+    if (lower.includes('firebase')) return 'firebase.google.com';
     if (lower.includes('aws management console') || lower.includes('amazon web services')) return 'aws.amazon.com';
     if (lower.includes('azure portal') || lower.includes('microsoft azure')) return 'portal.azure.com';
-    if (lower.includes('linear –') || lower.includes('linear -')) return 'linear.app';
+    if (lower.includes('linear –') || lower.includes('linear -') || lower.includes('linear |')) return 'linear.app';
     if (lower.includes('postman')) return 'web.postman.co';
     if (lower.includes('figma')) return 'figma.com';
     if (lower.includes('notion')) return 'notion.so';
@@ -451,6 +471,7 @@ export class BrowserBridge {
     if (lower.includes('google slide')) return 'slides.google.com';
     if (lower.includes('google drive')) return 'drive.google.com';
     if (lower.includes('google calendar')) return 'calendar.google.com';
+    if (lower.includes('google search') || lowerStripped === 'google') return 'google.com';
     if (lower.includes('slack')) return 'slack.com';
     if (lower.includes('trello')) return 'trello.com';
     if (lower.includes('jira') || lower.includes('atlassian') || lower.includes('confluence')) return 'atlassian.net';
@@ -461,8 +482,33 @@ export class BrowserBridge {
     if (lower.includes('discord')) return 'discord.com';
     if (lower.includes('youtube')) return 'youtube.com';
     if (lower.includes('linkedin')) return 'linkedin.com';
-    if (lower.includes('twitter') || lower.includes(' x.com') || lower.includes(' / x')) return 'x.com';
+    if (lower.includes('twitter') || lower.includes(' x.com') || lower.includes(' / x') || lowerStripped === 'x') return 'x.com';
     if (lower.includes('reddit')) return 'reddit.com';
+    if (lower.includes('wikipedia')) return 'wikipedia.org';
+    if (lower.includes('amazon')) return 'amazon.com';
+    if (lower.includes('flipkart')) return 'flipkart.com';
+    if (lower.includes('netflix')) return 'netflix.com';
+    if (lower.includes('coursera')) return 'coursera.org';
+    if (lower.includes('udemy')) return 'udemy.com';
+    if (lower.includes('medium')) return 'medium.com';
+    if (lower.includes('dev.to')) return 'dev.to';
+    if (lower.includes('hashnode')) return 'hashnode.com';
+    if (lower.includes('spotify')) return 'open.spotify.com';
+    if (lower.includes('twitch')) return 'twitch.tv';
+    if (lower.includes('pinterest')) return 'pinterest.com';
+    if (lower.includes('quora')) return 'quora.com';
+    if (lower.includes('dropbox')) return 'dropbox.com';
+    if (lower.includes('zoom')) return 'zoom.us';
+    if (lower.includes('npm')) return 'npmjs.com';
+
+    // 4. Popular Documentation & Libraries
+    if (lower.includes('react')) return 'react.dev';
+    if (lower.includes('vue')) return 'vuejs.org';
+    if (lower.includes('angular')) return 'angular.dev';
+    if (lower.includes('next.js') || lower.includes('nextjs')) return 'nextjs.org';
+    if (lower.includes('tailwind')) return 'tailwindcss.com';
+    if (lower.includes('typescript')) return 'typescriptlang.org';
+    if (lower.includes('python')) return 'python.org';
 
     return null;
   }

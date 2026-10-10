@@ -211,6 +211,28 @@ ipcMain.handle('agent:openExtensionFolder', async () => {
   return { success: false, error: 'Extension directory not found' };
 });
 
+ipcMain.handle('agent:getExtensionPath', async () => {
+  let targetPath = '';
+  if (app.isPackaged) {
+    const resPath = path.join(process.resourcesPath, 'browser-extension');
+    if (fs.existsSync(resPath)) {
+      targetPath = resPath;
+    }
+  }
+  if (!targetPath) {
+    const devPath = path.resolve(__dirname, '../../browser-extension');
+    if (fs.existsSync(devPath)) {
+      targetPath = devPath;
+    } else {
+      const distPath = path.resolve(__dirname, '../browser-extension');
+      if (fs.existsSync(distPath)) {
+        targetPath = distPath;
+      }
+    }
+  }
+  return { success: Boolean(targetPath), path: targetPath };
+});
+
 app.whenReady().then(() => {
   createWindow();
   createTray();
