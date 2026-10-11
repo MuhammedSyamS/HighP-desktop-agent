@@ -649,6 +649,12 @@ setInterval(() => {
 
 // Populate saved preferences on application launch (Clean, no auto-login)
 window.addEventListener('DOMContentLoaded', () => {
+  // Purge any legacy developer test accounts from previous sessions
+  const prevEmail = localStorage.getItem('agent_email');
+  if (prevEmail && (prevEmail.toLowerCase().includes('sham') || prevEmail.toLowerCase().includes('midhun'))) {
+    localStorage.removeItem('agent_email');
+    localStorage.removeItem('agent_pass');
+  }
   const savedUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
   const savedEmail = localStorage.getItem('agent_email') || '';
 
@@ -656,5 +662,5 @@ window.addEventListener('DOMContentLoaded', () => {
   const emailInput = document.getElementById('email');
 
   if (apiInput) apiInput.value = savedUrl;
-  if (emailInput && savedEmail) emailInput.value = savedEmail;
+  if (emailInput) emailInput.value = savedEmail;
 });
