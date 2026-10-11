@@ -68,6 +68,7 @@ export interface AgentState {
   isBrowserActive?: boolean;
   browserBridgeConnected?: boolean;
   health?: TrackingEngineHealth;
+  hasCompletedShiftToday?: boolean;
   platform?: string;
   architecture?: string;
   capabilities?: PlatformCapabilities;
@@ -98,6 +99,7 @@ export class AgentService {
   private activeSeconds = 0;
   private idleSeconds = 0;
   private breakSeconds = 0;
+  private hasCompletedShiftToday = false;
 
   // Application registry
   private dynamicRegistry: TrackedApplicationEntry[] = [];
@@ -435,6 +437,7 @@ export class AgentService {
       isBrowserActive: isBrowser,
       browserBridgeConnected: browserBridge.isConnected(),
       health: this.trackingEngine.getHealth(),
+      hasCompletedShiftToday: this.hasCompletedShiftToday,
       platform: this.telemetryProvider.platform,
       architecture: this.telemetryProvider.architecture,
       capabilities: this.telemetryProvider.getCapabilities(),
@@ -479,6 +482,9 @@ export class AgentService {
           const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
             headers: { Authorization: `Bearer ${this.token}` }
           });
+          if (sessRes.data?.hasCompletedShiftToday !== undefined) {
+            this.hasCompletedShiftToday = !!sessRes.data.hasCompletedShiftToday;
+          }
           if (sessRes.data?.data && sessRes.data.data.status === 'ACTIVE') {
             this.currentSessionId = sessRes.data.data._id;
             this.isWorking = true;
@@ -498,6 +504,17 @@ export class AgentService {
     } catch (err: any) {
       console.error('[AgentService] Login error:', err.message);
       throw err;
+    }
+  }
+
+  public async resetPassword(apiUrl: string, email: string, newPassword: string): Promise<boolean> {
+    const cleanUrl = this.normalizeApiUrl(apiUrl);
+    try {
+      const res = await axios.post(`${cleanUrl}/api/auth/reset-password`, { email, newPassword });
+      return res.status === 200 || res.data?.status === 'SUCCESS';
+    } catch (err: any) {
+      console.error('[AgentService] Reset password error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || 'Failed to reset password. Please check your email.');
     }
   }
 
@@ -537,6 +554,18 @@ export class AgentService {
 
   public async startWork(): Promise<void> {
     if (!this.token) throw new Error('Must be logged in to start work');
+
+    const now = new Date();
+    const curMins = now.getHours() * 60 + now.getMinutes();
+    if (curMins < 8 * 60 + 30) {
+      throw new Error('Work sessions can only be started from 8:30 AM onwards.');
+    }
+    if (curMins >= 17 * 60) {
+      throw new Error('Today\'s work shift ended at 5:00 PM. Next shift starts tomorrow at 8:30 AM.');
+    }
+    if (this.hasCompletedShiftToday) {
+      throw new Error('You have already completed your shift for today. Next work session starts tomorrow at 8:30 AM.');
+    }
 
     try {
       const res = await axios.post(
@@ -587,6 +616,7 @@ export class AgentService {
     this.activeSeconds = 0;
     this.idleSeconds = 0;
     this.breakSeconds = 0;
+    this.hasCompletedShiftToday = true;
 
     try {
       if (fs.existsSync(this.crashRecoveryFilePath)) fs.unlinkSync(this.crashRecoveryFilePath);
@@ -669,6 +699,14 @@ export class AgentService {
 
   private async runTrackingTick(): Promise<void> {
     if (!this.isWorking) return;
+
+    // 5:00 PM (17:00) Automatic Shift End Policy (Shift: 9:00 AM - 5:00 PM)
+    const now = new Date();
+    if (this.isWorking && now.getHours() >= 17) {
+      console.log('[AgentService] 5:00 PM shift end reached. Concluding work session automatically.');
+      await this.endWork();
+      return;
+    }
 
     if (this.isOnBreak) {
       this.breakSeconds += 1;

@@ -34,11 +34,27 @@ const breakTimer = document.getElementById('breakTimer');
 
 // Action Controls
 const startWorkBtn = document.getElementById('startWorkBtn');
+const shiftNoticeText = document.getElementById('shiftNoticeText');
 const endWorkBtn = document.getElementById('endWorkBtn');
 const breakControls = document.getElementById('breakControls');
 const breakReasonSelect = document.getElementById('breakReasonSelect');
 const startBreakBtn = document.getElementById('startBreakBtn');
 const endBreakBtn = document.getElementById('endBreakBtn');
+
+// Forgot Password Modal Elements
+const openForgotModalBtn = document.getElementById('openForgotModalBtn');
+const closeForgotModalBtn = document.getElementById('closeForgotModalBtn');
+const cancelForgotBtn = document.getElementById('cancelForgotBtn');
+const forgotPasswordModal = document.getElementById('forgotPasswordModal');
+const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+const forgotEmail = document.getElementById('forgotEmail');
+const forgotNewPass = document.getElementById('forgotNewPass');
+const forgotConfirmPass = document.getElementById('forgotConfirmPass');
+const forgotMsg = document.getElementById('forgotMsg');
+const submitForgotBtn = document.getElementById('submitForgotBtn');
+const submitForgotBtnText = document.getElementById('submitForgotBtnText');
+
+let latestState = null;
 
 // Extension Card Elements
 const extLivePill = document.getElementById('extLivePill');
@@ -142,6 +158,7 @@ function resolveAppIcon(appName = '', category = '') {
 
 function updateUI(state) {
   if (!state) return;
+  latestState = state;
 
   if (state.isLoggedIn) {
     loginView.classList.add('hidden');
@@ -279,6 +296,10 @@ function updateUI(state) {
       startWorkBtn.classList.add('hidden');
       endWorkBtn.classList.remove('hidden');
       breakControls.classList.remove('hidden');
+      if (shiftNoticeText) {
+        shiftNoticeText.textContent = '';
+        shiftNoticeText.classList.remove('visible');
+      }
 
       if (state.isOnBreak) {
         startBreakBtn.classList.add('hidden');
@@ -293,6 +314,45 @@ function updateUI(state) {
       startWorkBtn.classList.remove('hidden');
       endWorkBtn.classList.add('hidden');
       breakControls.classList.add('hidden');
+
+      const now = new Date();
+      const curMins = now.getHours() * 60 + now.getMinutes();
+      const isBefore830 = curMins < 8 * 60 + 30;
+      const isPast5PM = curMins >= 17 * 60;
+
+      if (state.hasCompletedShiftToday) {
+        startWorkBtn.disabled = true;
+        startWorkBtn.classList.add('disabled-btn');
+        startWorkBtn.innerHTML = '<span class="btn-icon">✓</span> Shift Completed Today';
+        if (shiftNoticeText) {
+          shiftNoticeText.textContent = "Today's work shift has concluded. Next work session starts tomorrow at 8:30 AM.";
+          shiftNoticeText.classList.add('visible');
+        }
+      } else if (isBefore830) {
+        startWorkBtn.disabled = true;
+        startWorkBtn.classList.add('disabled-btn');
+        startWorkBtn.innerHTML = '<span class="btn-icon">🔒</span> Clock-In Opens @ 8:30 AM';
+        if (shiftNoticeText) {
+          shiftNoticeText.textContent = 'Shift Window: 8:30 AM – 5:00 PM. Clock-in button enables automatically at 8:30 AM.';
+          shiftNoticeText.classList.add('visible');
+        }
+      } else if (isPast5PM) {
+        startWorkBtn.disabled = true;
+        startWorkBtn.classList.add('disabled-btn');
+        startWorkBtn.innerHTML = '<span class="btn-icon">🔒</span> Shift Concluded @ 5:00 PM';
+        if (shiftNoticeText) {
+          shiftNoticeText.textContent = "Today's shift ended at 5:00 PM. Next work session starts tomorrow at 8:30 AM.";
+          shiftNoticeText.classList.add('visible');
+        }
+      } else {
+        startWorkBtn.disabled = false;
+        startWorkBtn.classList.remove('disabled-btn');
+        startWorkBtn.innerHTML = '<span class="btn-icon">▶</span> Start Work Session';
+        if (shiftNoticeText) {
+          shiftNoticeText.textContent = '';
+          shiftNoticeText.classList.remove('visible');
+        }
+      }
     }
 
     // Diagnostics Elements
@@ -387,7 +447,7 @@ loginForm.addEventListener('submit', async (e) => {
   if (loginBtnText) loginBtnText.textContent = 'Connecting...';
 
   const apiUrl = (document.getElementById('apiUrl').value || '').trim() || 'https://highp-agent-backend.onrender.com';
-  const email = document.getElementById('email').value;
+  const email = (document.getElementById('email').value || '').trim();
   const pass = document.getElementById('password').value;
 
   try {
@@ -395,8 +455,9 @@ loginForm.addEventListener('submit', async (e) => {
     if (success) {
       localStorage.setItem('agent_api_url', apiUrl);
       localStorage.setItem('agent_email', email);
-      localStorage.setItem('agent_pass', pass);
-      await window.agentApi.startWork();
+      // Clean password from memory and form
+      const passInput = document.getElementById('password');
+      if (passInput) passInput.value = '';
     } else {
       loginError.textContent = 'Invalid credentials or login failed.';
     }
@@ -410,16 +471,23 @@ loginForm.addEventListener('submit', async (e) => {
 
 logoutBtn.addEventListener('click', async () => {
   await window.agentApi.logout();
-  localStorage.removeItem('agent_email');
   localStorage.removeItem('agent_pass');
 });
 
 startWorkBtn.addEventListener('click', async () => {
-  await window.agentApi.startWork();
+  try {
+    await window.agentApi.startWork();
+  } catch (err) {
+    alert(err.message || 'Could not start work session.');
+  }
 });
 
 endWorkBtn.addEventListener('click', async () => {
-  await window.agentApi.endWork();
+  try {
+    await window.agentApi.endWork();
+  } catch (err) {
+    console.error('Error ending work:', err);
+  }
 });
 
 startBreakBtn.addEventListener('click', async () => {
@@ -430,6 +498,86 @@ startBreakBtn.addEventListener('click', async () => {
 endBreakBtn.addEventListener('click', async () => {
   await window.agentApi.endBreak();
 });
+
+// Forgot Password Modal Handlers
+function openForgotModal() {
+  if (forgotPasswordModal) forgotPasswordModal.classList.remove('hidden');
+  if (forgotEmail) forgotEmail.value = document.getElementById('email')?.value || '';
+  if (forgotNewPass) forgotNewPass.value = '';
+  if (forgotConfirmPass) forgotConfirmPass.value = '';
+  if (forgotMsg) {
+    forgotMsg.textContent = '';
+    forgotMsg.className = 'modal-msg hidden';
+  }
+}
+
+function closeForgotModal() {
+  if (forgotPasswordModal) forgotPasswordModal.classList.add('hidden');
+}
+
+if (openForgotModalBtn) {
+  openForgotModalBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    openForgotModal();
+  });
+}
+
+if (closeForgotModalBtn) closeForgotModalBtn.addEventListener('click', closeForgotModal);
+if (cancelForgotBtn) cancelForgotBtn.addEventListener('click', closeForgotModal);
+
+if (forgotPasswordForm) {
+  forgotPasswordForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = (forgotEmail.value || '').trim();
+    const newPass = forgotNewPass.value;
+    const confirmPass = forgotConfirmPass.value;
+
+    if (!email) {
+      forgotMsg.textContent = 'Please enter your work email.';
+      forgotMsg.className = 'modal-msg error';
+      return;
+    }
+
+    if (newPass.length < 6) {
+      forgotMsg.textContent = 'Password must be at least 6 characters.';
+      forgotMsg.className = 'modal-msg error';
+      return;
+    }
+
+    if (newPass !== confirmPass) {
+      forgotMsg.textContent = 'Passwords do not match.';
+      forgotMsg.className = 'modal-msg error';
+      return;
+    }
+
+    submitForgotBtn.disabled = true;
+    if (submitForgotBtnText) submitForgotBtnText.textContent = 'Resetting...';
+    forgotMsg.className = 'modal-msg hidden';
+
+    try {
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      await window.agentApi.resetPassword(apiUrl, email, newPass);
+      forgotMsg.textContent = 'Password reset successfully! You can now sign in with your new password.';
+      forgotMsg.className = 'modal-msg success';
+      setTimeout(() => {
+        closeForgotModal();
+        const emailInput = document.getElementById('email');
+        if (emailInput) emailInput.value = email;
+        const passInput = document.getElementById('password');
+        if (passInput) {
+          passInput.value = '';
+          passInput.focus();
+        }
+      }, 1800);
+    } catch (err) {
+      forgotMsg.textContent = err.message || 'Failed to reset password. Please verify your email.';
+      forgotMsg.className = 'modal-msg error';
+    } finally {
+      submitForgotBtn.disabled = false;
+      if (submitForgotBtnText) submitForgotBtnText.textContent = 'Reset Password';
+    }
+  });
+}
 
 // Extension Helpers
 if (openExtFolderBtn) {
@@ -492,27 +640,21 @@ if (window.agentApi && window.agentApi.onStateUpdate) {
   });
 }
 
-// Auto-start work on application launch
-window.addEventListener('DOMContentLoaded', async () => {
-  const defaultUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
-  const defaultEmail = localStorage.getItem('agent_email') || 'shamsaifudheen@gmail.com';
-  const defaultPass = localStorage.getItem('agent_pass') || 'Password@123';
+// Periodic ticker (re-evaluates start button unlock at 8:30 AM without reload)
+setInterval(() => {
+  if (latestState && !latestState.isWorking) {
+    updateUI(latestState);
+  }
+}, 5000);
+
+// Populate saved preferences on application launch (Clean, no auto-login)
+window.addEventListener('DOMContentLoaded', () => {
+  const savedUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
+  const savedEmail = localStorage.getItem('agent_email') || '';
 
   const apiInput = document.getElementById('apiUrl');
   const emailInput = document.getElementById('email');
-  const passInput = document.getElementById('password');
 
-  if (apiInput) apiInput.value = defaultUrl;
-  if (emailInput) emailInput.value = defaultEmail;
-  if (passInput) passInput.value = defaultPass;
-
-  try {
-    const success = await window.agentApi.login(defaultUrl, defaultEmail, defaultPass);
-    if (success) {
-      await window.agentApi.startWork();
-      console.log('[DesktopAgent] Auto-started work successfully for', defaultEmail);
-    }
-  } catch (err) {
-    console.warn('[DesktopAgent] Auto-start bypassed:', err.message);
-  }
+  if (apiInput) apiInput.value = savedUrl;
+  if (emailInput && savedEmail) emailInput.value = savedEmail;
 });

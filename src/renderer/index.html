@@ -39,28 +39,25 @@
         
         <form id="loginForm">
           <div class="form-group">
+            <label for="email">Work Email</label>
+            <input type="email" id="email" placeholder="employee@company.com" required autocomplete="email">
+          </div>
+          <div class="form-group">
             <div class="field-header">
+              <label for="password">Password</label>
+              <a href="#" id="openForgotModalBtn" class="forgot-link">Forgot Password?</a>
+            </div>
+            <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+
+          <details class="server-config-details">
+            <summary class="server-config-summary">⚙️ Server Connection Settings</summary>
+            <div class="server-config-body">
               <label for="apiUrl">Server API URL</label>
-              <div class="quick-presets">
-                <button type="button" class="preset-chip" onclick="document.getElementById('apiUrl').value='http://localhost:5001'">⚡ Localhost (5001)</button>
-                <button type="button" class="preset-chip" onclick="document.getElementById('apiUrl').value='https://highp-agent-backend.onrender.com'">🌐 Cloud</button>
-              </div>
+              <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" placeholder="https://highp-agent-backend.onrender.com">
             </div>
-            <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" required placeholder="https://your-server.com">
-          </div>
-          <div class="form-group">
-            <div class="field-header">
-              <label for="email">Work Email</label>
-              <div class="quick-presets">
-                <button type="button" class="preset-chip" onclick="document.getElementById('email').value='shamsaifudheen@gmail.com';document.getElementById('password').value='Password@123'">⚡ Sham (HR)</button>
-              </div>
-            </div>
-            <input type="email" id="email" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required>
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" value="Password@123" placeholder="••••••••" required>
-          </div>
+          </details>
+
           <button type="submit" id="loginBtn" class="btn btn-primary btn-glow">
             <span id="loginBtnText">Sign In & Connect</span>
           </button>
@@ -154,6 +151,7 @@
           <button id="startWorkBtn" class="btn btn-success btn-lg btn-glow">
             <span class="btn-icon">▶</span> Start Work Session
           </button>
+          <div id="shiftNoticeText" class="shift-notice-text"></div>
           <button id="endWorkBtn" class="btn btn-danger btn-lg hidden">
             <span class="btn-icon">■</span> End Work Session
           </button>
@@ -275,6 +273,41 @@
         <p>This agent only tracks foreground application names and active/idle intervals. It <strong>NEVER</strong> captures keystrokes, passwords, private chats, screenshots, webcam, or microphone.</p>
       </div>
     </section>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div id="forgotPasswordModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-box">
+          <span class="modal-badge">SECURITY</span>
+          <h3>Reset Password</h3>
+        </div>
+        <button type="button" id="closeForgotModalBtn" class="btn-close" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-desc">Enter your work email address and choose a new secure password.</p>
+      <form id="forgotPasswordForm">
+        <div class="form-group">
+          <label for="forgotEmail">Work Email</label>
+          <input type="email" id="forgotEmail" placeholder="employee@company.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="forgotNewPass">New Password</label>
+          <input type="password" id="forgotNewPass" placeholder="Enter new password (min 6 characters)" minlength="6" required autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label for="forgotConfirmPass">Confirm New Password</label>
+          <input type="password" id="forgotConfirmPass" placeholder="Re-enter new password" minlength="6" required autocomplete="new-password">
+        </div>
+        <div id="forgotMsg" class="modal-msg hidden"></div>
+        <div class="modal-actions">
+          <button type="button" id="cancelForgotBtn" class="btn btn-ghost">Cancel</button>
+          <button type="submit" id="submitForgotBtn" class="btn btn-primary">
+            <span id="submitForgotBtnText">Reset Password</span>
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script src="app.js"></script>

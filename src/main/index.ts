@@ -192,6 +192,10 @@ ipcMain.handle('agent:login', async (_e, { apiUrl, email, pass }) => {
   return agentService.login(apiUrl, email, pass);
 });
 
+ipcMain.handle('agent:resetPassword', async (_e, { apiUrl, email, newPassword }) => {
+  return agentService.resetPassword(apiUrl, email, newPassword);
+});
+
 ipcMain.handle('agent:logout', async () => {
   return agentService.logout();
 });

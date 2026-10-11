@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('agentApi', {
   setAutostart: (enabled: boolean) => ipcRenderer.invoke('agent:setAutostart', { enabled }),
   openExtensionFolder: () => ipcRenderer.invoke('agent:openExtensionFolder'),
   getExtensionPath: () => ipcRenderer.invoke('agent:getExtensionPath'),
+  resetPassword: (apiUrl: string, email: string, newPassword: string) =>
+    ipcRenderer.invoke('agent:resetPassword', { apiUrl, email, newPassword }),
   onStateUpdate: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('agent:state-update', handler);
