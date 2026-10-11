@@ -386,9 +386,28 @@ export class TrackingEngine {
     // 3. Foreground Window Identity Evaluation
     const isHighPSelf = this.isAgentSelfProcess(obs);
     if (isHighPSelf) {
-      if (this.currentAppInterval && this.currentAppInterval.name !== 'HighP Agent') {
+      if (!this.currentAppInterval || this.currentAppInterval.name !== 'HighP Agent') {
         this.closeWebInterval();
         this.closeAppInterval();
+
+        const appEventId = uuidv4();
+        const now = obs.timestamp ? new Date(obs.timestamp) : new Date();
+        const appStartMonoNs = obs.monotonicTimestampNs !== undefined ? obs.monotonicTimestampNs : process.hrtime.bigint();
+        this.currentAppInterval = {
+          eventId: appEventId,
+          applicationId: 'highp-desktop-agent',
+          name: 'HighP Agent',
+          executable: obs.executable || 'HighP Agent.exe',
+          executablePath: obs.executablePath,
+          pid: obs.processId,
+          hwnd: obs.windowId,
+          windowId: obs.windowId,
+          windowTitle: obs.windowTitle || 'HighP Agent - Activity Monitor',
+          category: 'System',
+          trackingState: 'IGNORED',
+          startedAt: now,
+          monotonicStartNs: appStartMonoNs
+        };
         this.notifyChange();
       }
       return;
@@ -405,8 +424,12 @@ export class TrackingEngine {
       dynamicRegistry: this.dynamicRegistry
     });
 
-    // Filter desktop shell background without terminating work app
-    if ((resolved.name === 'Windows Desktop' || resolved.name === 'macOS Desktop') && this.currentAppInterval && this.currentAppInterval.name !== 'None') {
+    // Filter desktop shell background or transient 0-PID blur without terminating active work app
+    if (
+      (resolved.name === 'Windows Desktop' || resolved.name === 'macOS Desktop' || (resolved.isUnknown && obs.processId === 0)) &&
+      this.currentAppInterval &&
+      this.currentAppInterval.name !== 'None'
+    ) {
       return;
     }
 
@@ -487,6 +510,8 @@ export class TrackingEngine {
             windowTitle: obs.windowTitle,
             category: resolved.category
           },
+          applicationName: resolved.name,
+          processName: resolved.executableName,
           process: resolved.executableName,
           pid: obs.processId,
           hwnd: obs.windowId,
@@ -665,7 +690,9 @@ export class TrackingEngine {
       sessionId: this.sessionId,
       eventType: ActivityEventType.SLEEP,
       timestamp: new Date().toISOString(),
-      durationSeconds: 0
+      durationSeconds: 0,
+      applicationName: 'System',
+      processName: 'system'
     });
 
     this.currentState = ActivityState.SLEEPING;
@@ -681,7 +708,9 @@ export class TrackingEngine {
       sessionId: this.sessionId,
       eventType: ActivityEventType.RESUME,
       timestamp: new Date().toISOString(),
-      durationSeconds: 0
+      durationSeconds: 0,
+      applicationName: 'System',
+      processName: 'system'
     });
 
     this.currentState = ActivityState.WAITING_FOR_INPUT;
@@ -693,13 +722,16 @@ export class TrackingEngine {
   private openWebInterval(info: ActiveWebsiteInfo): void {
     if (!this.sessionId || !this.currentAppInterval) return;
 
+    const browserApp = info.browser || (this.currentAppInterval ? this.currentAppInterval.name : 'Google Chrome');
+    const browserExe = this.currentAppInterval ? this.currentAppInterval.executable : `${browserApp.toLowerCase().replace(/\s+/g, '')}.exe`;
+
     const eventId = uuidv4();
     const now = new Date();
     const nowMonoNs = process.hrtime.bigint();
     this.currentWebInterval = {
       eventId,
       domain: info.domain,
-      browser: info.browser,
+      browser: browserApp,
       windowId: info.windowId,
       tabId: info.tabId,
       url: info.url,
@@ -719,14 +751,16 @@ export class TrackingEngine {
       durationSeconds: 0,
       durationMs: 0,
       clockSource: 'MONOTONIC',
+      applicationName: browserApp,
+      processName: browserExe,
       website: {
-        browser: info.browser,
+        browser: browserApp,
         windowId: info.windowId,
         tabId: info.tabId,
         domain: info.domain,
         title: info.title
       },
-      browser: info.browser,
+      browser: browserApp,
       windowId: info.windowId,
       tabId: info.tabId
     });
@@ -750,6 +784,8 @@ export class TrackingEngine {
       : 0n;
     const durationMs = Math.max(0, Number(elapsedNs / 1_000_000n));
     const durationSeconds = Math.max(0, Math.floor(durationMs / 1000));
+    const browserApp = this.currentWebInterval.browser || (this.currentAppInterval ? this.currentAppInterval.name : 'Google Chrome');
+    const browserExe = this.currentAppInterval ? this.currentAppInterval.executable : `${browserApp.toLowerCase().replace(/\s+/g, '')}.exe`;
 
     this.emitEvent({
       eventId: uuidv4(),
@@ -766,13 +802,16 @@ export class TrackingEngine {
       durationSeconds,
       clockSource: 'MONOTONIC',
       website: {
-        browser: this.currentWebInterval.browser,
+        browser: browserApp,
         windowId: this.currentWebInterval.windowId,
         tabId: this.currentWebInterval.tabId,
         domain: this.currentWebInterval.domain,
         title: this.currentWebInterval.title
       },
-      browser: this.currentWebInterval.browser,
+      domain: this.currentWebInterval.domain,
+      applicationName: browserApp,
+      processName: browserExe,
+      browser: browserApp,
       windowId: this.currentWebInterval.windowId,
       tabId: this.currentWebInterval.tabId
     });
@@ -828,6 +867,8 @@ export class TrackingEngine {
           category: this.currentAppInterval.category
         },
         process: this.currentAppInterval.executable,
+        applicationName: this.currentAppInterval.name,
+        processName: this.currentAppInterval.executable,
         pid: this.currentAppInterval.pid,
         hwnd: this.currentAppInterval.windowId,
         metadata: {

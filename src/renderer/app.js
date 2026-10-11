@@ -18,12 +18,14 @@ const currentAppName = document.getElementById('currentAppName');
 const appIcon = document.getElementById('appIcon');
 const appCategoryBadge = document.getElementById('appCategoryBadge');
 const appProcessTag = document.getElementById('appProcessTag');
+const appDurationTimer = document.getElementById('appDurationTimer');
 
 // Website Tracking Elements
 const activeWebsiteBox = document.getElementById('activeWebsiteBox');
 const currentWebDomain = document.getElementById('currentWebDomain');
 const currentWebTitle = document.getElementById('currentWebTitle');
 const webTrackingSourceBadge = document.getElementById('webTrackingSourceBadge');
+const webDurationTimer = document.getElementById('webDurationTimer');
 
 // Timers
 const activeTimer = document.getElementById('activeTimer');
@@ -129,6 +131,9 @@ function resolveAppIcon(appName = '', category = '') {
   if (lower.includes('spotify') || lower.includes('vlc') || catLower === 'media') {
     return '🎵';
   }
+  if (lower.includes('highp')) {
+    return '🛡️';
+  }
   if (lower.includes('settings') || lower.includes('task manager') || lower.includes('desktop') || catLower === 'system') {
     return '⚙️';
   }
@@ -181,20 +186,37 @@ function updateUI(state) {
       categoryName = 'Idle';
       processText = 'No physical keyboard/mouse activity';
       if (appIcon) appIcon.textContent = '⏳';
+    } else if (state.currentApplication === 'HighP Agent') {
+      displayName = 'HighP Agent';
+      categoryName = 'Agent Client';
+      processText = 'Active Window • Ready & Monitoring background apps';
+      if (appIcon) appIcon.textContent = '🛡️';
     } else if (state.currentApplication && state.currentApplication !== 'None') {
       displayName = state.currentApplication;
       categoryName = appInfo?.category || 'General';
       processText = appInfo?.executableName ? `${appInfo.executableName}${appInfo.processId ? ` (PID: ${appInfo.processId})` : ''}` : '';
       if (appIcon) appIcon.textContent = resolveAppIcon(displayName, categoryName);
     } else {
-      displayName = 'Analyzing active window...';
-      categoryName = 'Detecting';
-      if (appIcon) appIcon.textContent = '💻';
+      displayName = 'Monitoring Active Apps';
+      categoryName = 'Active';
+      processText = 'Switch to any work application to track';
+      if (appIcon) appIcon.textContent = '⚡';
     }
 
     if (currentAppName) currentAppName.textContent = displayName;
     if (appCategoryBadge) appCategoryBadge.textContent = categoryName;
     if (appProcessTag) appProcessTag.textContent = processText || displayName;
+
+    // Live Active App Duration
+    const appDurSec = Number(state.currentAppDurationSeconds || state.currentApplicationInfo?.durationSeconds || 0);
+    if (appDurationTimer) {
+      if (state.isWorking && !state.isOnBreak && displayName && displayName !== 'Session not active' && displayName !== 'System Idle') {
+        appDurationTimer.textContent = `⏱️ ${formatTime(appDurSec)}`;
+        appDurationTimer.style.display = 'inline-flex';
+      } else {
+        appDurationTimer.style.display = 'none';
+      }
+    }
 
     // Active Website Box (The Core UX Fix)
     const hasWebsite = Boolean(state.currentWebsite && state.currentWebsite.domain);
@@ -202,6 +224,16 @@ function updateUI(state) {
 
     if (state.isWorking && !state.isOnBreak && (hasWebsite || isBrowserApp)) {
       if (activeWebsiteBox) activeWebsiteBox.classList.remove('hidden');
+
+      const webDurSec = Number(state.currentWebDurationSeconds || state.currentWebsite?.durationSeconds || 0);
+      if (webDurationTimer) {
+        if (hasWebsite) {
+          webDurationTimer.textContent = `⏱️ ${formatTime(webDurSec)}`;
+          webDurationTimer.style.display = 'inline-flex';
+        } else {
+          webDurationTimer.style.display = 'none';
+        }
+      }
 
       if (hasWebsite && state.currentWebsite) {
         if (currentWebDomain) currentWebDomain.textContent = state.currentWebsite.domain;

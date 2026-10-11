@@ -42,3 +42,11 @@ if (fs.existsSync(srcExt)) {
   console.log('[Assets] Browser extension files copied to dist/browser-extension.');
 }
 
+const srcAssets = path.resolve(__dirname, '../assets');
+const distAssets = path.resolve(__dirname, '../dist/assets');
+if (fs.existsSync(srcAssets)) {
+  copyDir(srcAssets, distAssets);
+  console.log('[Assets] Application icon assets copied to dist/assets.');
+}
+
+

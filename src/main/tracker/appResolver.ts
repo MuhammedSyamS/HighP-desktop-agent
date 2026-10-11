@@ -1039,6 +1039,81 @@ export function resolveApplication(
   const isGenericUnknown = !normalizedStem || normalizedStem === 'unknown' || normalizedStem === 'idle';
   let displayName = 'Unknown Application';
   let inferredCategory = 'Other';
+  let inferredExe = rawExe || 'unknown';
+  let inferredTrackingState: 'TRACKED' | 'IGNORED' | 'UNKNOWN' = 'UNKNOWN';
+  let isSystemWindow = false;
+
+  if (isGenericUnknown && cleanTitle) {
+    const lowerTitle = cleanTitle.toLowerCase();
+    if (
+      cleanTitle === 'Program Manager' ||
+      cleanTitle === 'Taskbar' ||
+      cleanTitle === 'Desktop' ||
+      lowerTitle.includes('lock screen') ||
+      lowerTitle.includes('quick settings') ||
+      lowerTitle === 'searchhost' ||
+      lowerTitle === 'search' ||
+      lowerTitle.includes('notification')
+    ) {
+      displayName = 'Windows Desktop';
+      inferredExe = 'explorer.exe';
+      inferredCategory = 'System';
+      inferredTrackingState = 'IGNORED';
+      isSystemWindow = true;
+    } else if (lowerTitle.includes('google chrome') || lowerTitle.endsWith(' - chrome') || lowerTitle.includes('chrome')) {
+      displayName = 'Google Chrome';
+      inferredExe = 'chrome.exe';
+      inferredCategory = 'Browsers';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('microsoft edge') || lowerTitle.endsWith(' - edge') || lowerTitle.includes('edge')) {
+      displayName = 'Microsoft Edge';
+      inferredExe = 'msedge.exe';
+      inferredCategory = 'Browsers';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('antigravity ide') || lowerTitle.includes('antigravity')) {
+      displayName = 'Antigravity IDE';
+      inferredExe = 'Antigravity IDE.exe';
+      inferredCategory = 'Development';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('visual studio code') || lowerTitle.includes('vs code') || lowerTitle.endsWith(' - code')) {
+      displayName = 'Visual Studio Code';
+      inferredExe = 'code.exe';
+      inferredCategory = 'Development';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('excel')) {
+      displayName = 'Microsoft Excel';
+      inferredExe = 'excel.exe';
+      inferredCategory = 'Productivity';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('word')) {
+      displayName = 'Microsoft Word';
+      inferredExe = 'winword.exe';
+      inferredCategory = 'Productivity';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('powerpoint')) {
+      displayName = 'Microsoft PowerPoint';
+      inferredExe = 'powerpnt.exe';
+      inferredCategory = 'Productivity';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('slack')) {
+      displayName = 'Slack';
+      inferredExe = 'slack.exe';
+      inferredCategory = 'Communication';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('teams')) {
+      displayName = 'Microsoft Teams';
+      inferredExe = 'teams.exe';
+      inferredCategory = 'Communication';
+      inferredTrackingState = 'TRACKED';
+    } else if (lowerTitle.includes('file explorer') || lowerTitle.includes('explorer')) {
+      displayName = 'Windows File Explorer';
+      inferredExe = 'explorer.exe';
+      inferredCategory = 'File Management';
+      inferredTrackingState = 'TRACKED';
+    } else if (cleanTitle.length > 0 && cleanTitle !== 'Unknown Application') {
+      displayName = cleanTitle.length > 36 ? cleanTitle.slice(0, 36) + '...' : cleanTitle;
+    }
+  }
 
   if (!isGenericUnknown) {
     displayName = normalizedStem.charAt(0).toUpperCase() + normalizedStem.slice(1);
@@ -1057,31 +1132,28 @@ export function resolveApplication(
     } else if (/music|media|sound|audio|player|spotify|vlc|stream|radio|movie/.test(lowerStem)) {
       inferredCategory = 'Media';
     }
-  } else if (cleanTitle) {
-    if (cleanTitle !== 'Program Manager' && cleanTitle !== 'Taskbar' && cleanTitle !== 'Desktop') {
-      displayName = cleanTitle.length > 36 ? cleanTitle.slice(0, 36) + '...' : cleanTitle;
-    }
   }
 
   const generatedAppId = slugify(displayName) || 'unknown-application';
+  const isStillUnknown = displayName === 'Unknown Application';
 
   return {
     applicationId: generatedAppId,
     name: displayName,
     applicationName: displayName,
-    executableName: rawExe || 'unknown',
-    processName: rawExe || 'unknown',
+    executableName: inferredExe,
+    processName: inferredExe,
     executablePath: normalizedPath,
     bundleId,
     desktopEntry,
     processId: pid,
     category: inferredCategory,
-    trackingState: 'UNKNOWN',
-    tracked: true,
-    ignored: false,
-    isUnknown: true,
-    isRecognized: false,
-    confidence: 'unknown'
+    trackingState: inferredTrackingState,
+    tracked: !isSystemWindow,
+    ignored: isSystemWindow,
+    isUnknown: isStillUnknown,
+    isRecognized: !isStillUnknown,
+    confidence: isStillUnknown ? 'unknown' : 'medium'
   };
 }
 

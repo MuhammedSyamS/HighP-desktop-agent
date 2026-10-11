@@ -61,6 +61,9 @@ export interface DurableTrackingEvent {
   hwnd?: string;
   windowId?: string | number;
   website?: EventWebsiteData | null;
+  domain?: string;
+  applicationName?: string;
+  processName?: string;
   browser?: string;
   tabId?: number;
   syncStatus: EventQueueStatus;

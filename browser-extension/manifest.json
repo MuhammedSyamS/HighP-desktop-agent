@@ -14,8 +14,18 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "HighP Browser Tracker"
+    "default_title": "HighP Browser Tracker",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   }
 }

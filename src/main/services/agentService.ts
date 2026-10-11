@@ -38,6 +38,7 @@ export interface CurrentApplicationInfo {
   hwnd?: string | number;
   windowTitle?: string;
   startedAt: string;
+  durationSeconds?: number;
   lastSeenAt: string;
 }
 
@@ -48,6 +49,8 @@ export interface AgentState {
   currentStatus: ActivityState;
   currentApplication: string;
   currentApplicationInfo?: CurrentApplicationInfo | null;
+  currentAppDurationSeconds?: number;
+  currentWebDurationSeconds?: number;
   activeSeconds: number;
   idleSeconds: number;
   breakSeconds: number;
@@ -61,7 +64,7 @@ export interface AgentState {
   lastHeartbeatTime?: string;
   lastSyncTime?: string;
   telemetryError?: string;
-  currentWebsite?: { domain: string; browser?: string; title?: string } | null;
+  currentWebsite?: { domain: string; browser?: string; title?: string; durationSeconds?: number } | null;
   isBrowserActive?: boolean;
   browserBridgeConnected?: boolean;
   health?: TrackingEngineHealth;
@@ -380,6 +383,18 @@ export class AgentService {
       }
     }
 
+    const appDurationSec = (this.isWorking && !this.isOnBreak && currentApp && currentState === ActivityState.ACTIVE)
+      ? Math.max(0, Math.floor((Date.now() - currentApp.startedAt.getTime()) / 1000))
+      : 0;
+
+    const webDurationSec = (this.isWorking && !this.isOnBreak && currentWeb && currentState === ActivityState.ACTIVE)
+      ? Math.max(0, Math.floor((Date.now() - currentWeb.startedAt.getTime()) / 1000))
+      : 0;
+
+    if (websiteInfo) {
+      (websiteInfo as any).durationSeconds = webDurationSec;
+    }
+
     const appInfo: CurrentApplicationInfo | null = currentApp ? {
       name: currentApp.name,
       executableName: currentApp.executable,
@@ -390,6 +405,7 @@ export class AgentService {
       hwnd: currentApp.hwnd,
       windowTitle: currentApp.windowTitle,
       startedAt: currentApp.startedAt.toISOString(),
+      durationSeconds: appDurationSec,
       lastSeenAt: new Date().toISOString()
     } : null;
 
@@ -400,6 +416,8 @@ export class AgentService {
       currentStatus: currentState,
       currentApplication: currentApp?.name || (currentState === ActivityState.IDLE ? 'System Idle' : 'None'),
       currentApplicationInfo: appInfo,
+      currentAppDurationSeconds: appDurationSec,
+      currentWebDurationSeconds: webDurationSec,
       activeSeconds: this.activeSeconds,
       idleSeconds: this.idleSeconds,
       breakSeconds: this.breakSeconds,

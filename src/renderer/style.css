@@ -48,12 +48,28 @@ body {
   min-height: 100vh;
 }
 
+/* Sleek Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
 .app-container {
-  padding: 18px 20px 24px;
+  padding: 14px 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 540px;
+  gap: 12px;
+  max-width: 500px;
   margin: 0 auto;
 }
 
@@ -73,16 +89,25 @@ body {
 }
 
 .logo-icon {
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
-  width: 36px;
-  height: 36px;
+  background: #C40C0C;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 19px;
-  box-shadow: 0 0 14px rgba(99, 102, 241, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .brand-title {
@@ -342,8 +367,8 @@ input:focus, select:focus {
   border-color: var(--border-color);
 }
 
-.btn-sm { width: auto; padding: 6px 12px; font-size: 11.5px; }
-.btn-lg { padding: 13px 20px; font-size: 14.5px; }
+.btn-sm { width: auto; padding: 6px 14px; font-size: 11.5px; border-radius: 8px; }
+.btn-lg { padding: 12px 20px; font-size: 14px; height: 46px; border-radius: var(--radius-sm); letter-spacing: 0.01em; }
 
 .error-msg {
   color: var(--status-danger);
@@ -516,6 +541,35 @@ input:focus, select:focus {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 3px;
+}
+
+.badge-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-duration-pill {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 1px 7px;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+}
+
+.live-duration-pill.web-pill {
+  color: #34D399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.15);
 }
 
 .cat-pill {
@@ -700,16 +754,63 @@ input:focus, select:focus {
 
 .break-controls {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .break-select-wrap {
   flex: 1;
+  position: relative;
 }
 
 .break-select {
-  padding: 10px 12px;
+  width: 100%;
+  height: 44px;
+  background-color: #1E293B;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 38px 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.break-select:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background-color: #273549;
+}
+
+.break-select:focus {
+  border-color: #F59E0B;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.break-select option {
+  background: #0F172A;
+  color: #F8FAFC;
+  padding: 10px;
+}
+
+#startBreakBtn, #endBreakBtn {
+  height: 44px;
+  padding: 0 22px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13.5px;
+  flex-shrink: 0;
 }
 
 /* Extension Companion Card */

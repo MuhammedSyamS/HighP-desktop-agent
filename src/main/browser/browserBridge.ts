@@ -205,7 +205,11 @@ export class BrowserBridge {
     });
 
     this.server.on('error', (err: any) => {
-      console.warn(`[BrowserBridge] Local HTTP server error on port ${this.port}:`, err.message);
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`[BrowserBridge] Port ${this.port} is already bound by another HighP instance. Companion telemetry will share active port.`);
+      } else {
+        console.warn(`[BrowserBridge] Local HTTP server error on port ${this.port}:`, err.message);
+      }
     });
 
     this.server.listen(this.port, '127.0.0.1', () => {

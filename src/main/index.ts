@@ -11,8 +11,18 @@ try {
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  console.log('[App] Another instance of HighP Agent is already running. Focusing existing instance and exiting.');
   app.quit();
+  process.exit(0);
 }
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+  }
+});
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -35,14 +45,37 @@ app.on('will-quit', () => {
 
 let isQuitting = false;
 
+function getAssetPath(filename: string): string {
+  const candidates = [
+    path.join(process.resourcesPath, 'assets', filename),
+    path.join(__dirname, '../assets', filename),
+    path.join(__dirname, '../../assets', filename),
+    path.join(process.cwd(), 'assets', filename)
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return candidates[1];
+}
+
 function createWindow() {
+  const icoCandidate = getAssetPath('icon.ico');
+  const pngCandidate = getAssetPath('icon.png');
+  let appIcon: Electron.NativeImage | undefined;
+  if (fs.existsSync(icoCandidate)) {
+    appIcon = nativeImage.createFromPath(icoCandidate);
+  } else if (fs.existsSync(pngCandidate)) {
+    appIcon = nativeImage.createFromPath(pngCandidate);
+  }
+
   mainWindow = new BrowserWindow({
-    width: 480,
-    height: 680,
-    minWidth: 420,
-    minHeight: 580,
+    width: 490,
+    height: 740,
+    minWidth: 440,
+    minHeight: 620,
     resizable: true,
     title: 'HighP Agent - Employee Transparency Monitor',
+    icon: appIcon,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -64,9 +97,20 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconBase64 =
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA7SURBVDhPY/wPBAwUACYGhgEGBgaG//8ZGBgY/jMwMDA8wKOBDAaA4BgNGBgYGBgY/mPDj1E3DNIN/wEArXgOD2z1FqAAAAAASUVORK5CYII=';
-  const icon = nativeImage.createFromDataURL(iconBase64);
+  const trayIconPath = getAssetPath('tray-icon.png');
+  const icoPath = getAssetPath('icon.ico');
+  let icon: Electron.NativeImage;
+
+  if (fs.existsSync(trayIconPath)) {
+    icon = nativeImage.createFromPath(trayIconPath);
+  } else if (fs.existsSync(icoPath)) {
+    icon = nativeImage.createFromPath(icoPath);
+  } else {
+    const iconBase64 =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA7SURBVDhPY/wPBAwUACYGhgEGBgaG//8ZGBgY/jMwMDA8wKOBDAaA4BgNGBgYGBgY/mPDj1E3DNIN/wEArXgOD2z1FqAAAAAASUVORK5CYII=';
+    icon = nativeImage.createFromDataURL(iconBase64);
+  }
+
   tray = new Tray(icon);
   tray.setToolTip('HighP Activity Monitor');
 

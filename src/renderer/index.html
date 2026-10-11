@@ -14,7 +14,10 @@
     <!-- Header -->
     <header class="app-header">
       <div class="brand">
-        <div class="logo-icon">⚡</div>
+        <div class="logo-icon">
+          <img src="../assets/icon.png" class="brand-logo-img" alt="HighP" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <span class="logo-fallback" style="display: none;">⚡</span>
+        </div>
         <div>
           <h1 class="brand-title">HighP Agent</h1>
           <span class="brand-subtitle">Enterprise Work Transparency</span>
@@ -97,7 +100,10 @@
           <div class="app-details">
             <div class="app-label-row">
               <span class="label">ACTIVE FOREGROUND APPLICATION</span>
-              <span id="appCategoryBadge" class="cat-pill">System</span>
+              <div class="badge-cluster">
+                <span id="appDurationTimer" class="live-duration-pill">00:00:00</span>
+                <span id="appCategoryBadge" class="cat-pill">System</span>
+              </div>
             </div>
             <h4 id="currentAppName">Detecting active application...</h4>
             <div id="appProcessRow" class="app-process-info">
@@ -112,7 +118,10 @@
           <div class="web-details">
             <div class="web-label-row">
               <span class="label">ACTIVE BROWSER WEBSITE</span>
-              <span id="webTrackingSourceBadge" class="source-pill">Companion Extension</span>
+              <div class="badge-cluster">
+                <span id="webDurationTimer" class="live-duration-pill web-pill">00:00:00</span>
+                <span id="webTrackingSourceBadge" class="source-pill">Companion Extension</span>
+              </div>
             </div>
             <div class="web-domain-row">
               <h4 id="currentWebDomain">None</h4>
