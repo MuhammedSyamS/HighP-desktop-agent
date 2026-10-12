@@ -1149,7 +1149,11 @@ input:focus, select:focus {
   color: var(--text-primary);
 }
 
-.hidden {
+.hidden,
+.action-buttons .btn.hidden,
+.break-controls.hidden,
+.active-website-box.hidden,
+.view-section.hidden {
   display: none !important;
 }
 

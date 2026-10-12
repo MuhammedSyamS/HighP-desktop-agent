@@ -154,6 +154,7 @@ function formatSeconds(sec) {
   const remSec = s % 60;
   return [h, m, remSec].map((v) => String(v).padStart(2, '0')).join(':');
 }
+const formatTime = formatSeconds;
 
 function resolveAppIcon(appName = '', category = '') {
   const lower = appName.toLowerCase();
@@ -193,160 +194,179 @@ function updateUI(state) {
   if (!state) return;
   latestState = state;
 
-  if (state.isLoggedIn) {
-    loginView.classList.add('hidden');
-    dashboardView.classList.remove('hidden');
+  try {
+    if (state.isLoggedIn) {
+      loginView.classList.add('hidden');
+      dashboardView.classList.remove('hidden');
 
-    userName.textContent = state.employeeName || state.userEmail || 'Employee';
-    userAvatar.textContent = (state.employeeName || state.userEmail || 'E').charAt(0).toUpperCase();
-    userCompany.textContent = `${state.companyName || 'Workforce'} • ${state.deviceId ? state.deviceId.slice(0, 12) : 'Registered'}`;
+      userName.textContent = state.employeeName || state.userEmail || 'Employee';
+      userAvatar.textContent = (state.employeeName || state.userEmail || 'E').charAt(0).toUpperCase();
+      userCompany.textContent = `${state.companyName || 'Workforce'} • ${state.deviceId ? state.deviceId.slice(0, 12) : 'Registered'}`;
 
-    // Connection Pill
-    if (state.isOnline) {
-      connectionStatus.className = 'connection-pill online';
-      if (connectionText) connectionText.textContent = 'Online';
-    } else {
-      connectionStatus.className = 'connection-pill offline';
-      if (connectionText) connectionText.textContent = 'Offline (Queued)';
-    }
-
-    // Status Badge
-    const statusText = state.currentStatus || 'OFFLINE';
-    statusBadge.textContent = statusText;
-    statusBadge.className = `status-badge status-${statusText.toLowerCase()}`;
-
-    // Active Application details
-    const appInfo = state.currentApplicationInfo;
-    let displayName = 'None';
-    let categoryName = 'General';
-    let processText = '';
-
-    if (!state.isWorking) {
-      displayName = 'Session not active';
-      categoryName = 'Inactive';
-      processText = 'Click "Start Work Session" below';
-      if (appIcon) appIcon.textContent = '⏸️';
-    } else if (state.isOnBreak) {
-      displayName = 'On Break';
-      categoryName = 'Break';
-      processText = 'Session timer paused';
-      if (appIcon) appIcon.textContent = '☕';
-    } else if (state.currentStatus === 'IDLE') {
-      displayName = 'System Idle';
-      categoryName = 'Idle';
-      processText = 'No physical keyboard/mouse activity';
-      if (appIcon) appIcon.textContent = '⏳';
-    } else if (state.currentApplication === 'HighP Agent') {
-      displayName = 'HighP Agent';
-      categoryName = 'Agent Client';
-      processText = 'Active Window • Ready & Monitoring background apps';
-      if (appIcon) appIcon.textContent = '🛡️';
-    } else if (state.currentApplication && state.currentApplication !== 'None') {
-      displayName = state.currentApplication;
-      categoryName = appInfo?.category || 'General';
-      processText = appInfo?.executableName ? `${appInfo.executableName}${appInfo.processId ? ` (PID: ${appInfo.processId})` : ''}` : '';
-      if (appIcon) appIcon.textContent = resolveAppIcon(displayName, categoryName);
-    } else {
-      displayName = 'Monitoring Active Apps';
-      categoryName = 'Active';
-      processText = 'Switch to any work application to track';
-      if (appIcon) appIcon.textContent = '⚡';
-    }
-
-    if (currentAppName) currentAppName.textContent = displayName;
-    if (appCategoryBadge) appCategoryBadge.textContent = categoryName;
-    if (appProcessTag) appProcessTag.textContent = processText || displayName;
-
-    // Live Active App Duration
-    const appDurSec = Number(state.currentAppDurationSeconds || state.currentApplicationInfo?.durationSeconds || 0);
-    if (appDurationTimer) {
-      if (state.isWorking && !state.isOnBreak && displayName && displayName !== 'Session not active' && displayName !== 'System Idle') {
-        appDurationTimer.textContent = `⏱️ ${formatTime(appDurSec)}`;
-        appDurationTimer.style.display = 'inline-flex';
+      // Connection Pill
+      if (state.isOnline) {
+        connectionStatus.className = 'connection-pill online';
+        if (connectionText) connectionText.textContent = 'Online';
       } else {
-        appDurationTimer.style.display = 'none';
+        connectionStatus.className = 'connection-pill offline';
+        if (connectionText) connectionText.textContent = 'Offline (Queued)';
       }
-    }
 
-    // Active Website Box (The Core UX Fix)
-    const hasWebsite = Boolean(state.currentWebsite && state.currentWebsite.domain);
-    const isBrowserApp = Boolean(state.isBrowserActive || (displayName && (displayName.includes('Chrome') || displayName.includes('Edge') || displayName.includes('Brave') || displayName.includes('Firefox') || displayName.includes('Opera'))));
+      // Status Badge
+      const statusText = state.currentStatus || 'OFFLINE';
+      statusBadge.textContent = statusText;
+      statusBadge.className = `status-badge status-${statusText.toLowerCase()}`;
 
-    if (state.isWorking && !state.isOnBreak && (hasWebsite || isBrowserApp)) {
-      if (activeWebsiteBox) activeWebsiteBox.classList.remove('hidden');
+      // Active Application details
+      const appInfo = state.currentApplicationInfo;
+      let displayName = 'None';
+      let categoryName = 'General';
+      let processText = '';
 
-      const webDurSec = Number(state.currentWebDurationSeconds || state.currentWebsite?.durationSeconds || 0);
-      if (webDurationTimer) {
-        if (hasWebsite) {
-          webDurationTimer.textContent = `⏱️ ${formatTime(webDurSec)}`;
-          webDurationTimer.style.display = 'inline-flex';
+      if (!state.isWorking) {
+        displayName = 'Session not active';
+        categoryName = 'Inactive';
+        processText = 'Click "Start Work Session" below';
+        if (appIcon) appIcon.textContent = '⏸️';
+      } else if (state.isOnBreak) {
+        displayName = 'On Break';
+        categoryName = 'Break';
+        processText = 'Session timer paused';
+        if (appIcon) appIcon.textContent = '☕';
+      } else if (state.currentStatus === 'IDLE') {
+        displayName = 'System Idle';
+        categoryName = 'Idle';
+        processText = 'No physical keyboard/mouse activity';
+        if (appIcon) appIcon.textContent = '⏳';
+      } else if (state.currentApplication === 'HighP Agent') {
+        displayName = 'HighP Agent';
+        categoryName = 'Agent Client';
+        processText = 'Active Window • Ready & Monitoring background apps';
+        if (appIcon) appIcon.textContent = '🛡️';
+      } else if (state.currentApplication && state.currentApplication !== 'None') {
+        displayName = state.currentApplication;
+        categoryName = appInfo?.category || 'General';
+        processText = appInfo?.executableName ? `${appInfo.executableName}${appInfo.processId ? ` (PID: ${appInfo.processId})` : ''}` : '';
+        if (appIcon) appIcon.textContent = resolveAppIcon(displayName, categoryName);
+      } else {
+        displayName = 'Monitoring Active Apps';
+        categoryName = 'Active';
+        processText = 'Switch to any work application to track';
+        if (appIcon) appIcon.textContent = '⚡';
+      }
+
+      if (currentAppName) currentAppName.textContent = displayName;
+      if (appCategoryBadge) appCategoryBadge.textContent = categoryName;
+      if (appProcessTag) appProcessTag.textContent = processText || displayName;
+
+      // Live Active App Duration
+      const appDurSec = Number(state.currentAppDurationSeconds || state.currentApplicationInfo?.durationSeconds || 0);
+      if (appDurationTimer) {
+        if (state.isWorking && !state.isOnBreak && displayName && displayName !== 'Session not active' && displayName !== 'System Idle') {
+          appDurationTimer.textContent = `⏱️ ${formatSeconds(appDurSec)}`;
+          appDurationTimer.style.display = 'inline-flex';
         } else {
-          webDurationTimer.style.display = 'none';
+          appDurationTimer.style.display = 'none';
         }
       }
 
-      if (hasWebsite && state.currentWebsite) {
-        if (currentWebDomain) currentWebDomain.textContent = state.currentWebsite.domain;
-        if (currentWebTitle) {
-          currentWebTitle.textContent = state.currentWebsite.title || state.currentWebsite.domain;
-          currentWebTitle.classList.remove('hidden');
+      // Active Website Box (The Core UX Fix)
+      const hasWebsite = Boolean(state.currentWebsite && state.currentWebsite.domain);
+      const isBrowserApp = Boolean(state.isBrowserActive || (displayName && (displayName.includes('Chrome') || displayName.includes('Edge') || displayName.includes('Brave') || displayName.includes('Firefox') || displayName.includes('Opera'))));
+
+      if (state.isWorking && !state.isOnBreak && (hasWebsite || isBrowserApp)) {
+        if (activeWebsiteBox) {
+          activeWebsiteBox.classList.remove('hidden');
+          activeWebsiteBox.style.display = 'flex';
         }
-        if (webTrackingSourceBadge) {
-          webTrackingSourceBadge.textContent = state.browserBridgeConnected ? 'Companion Extension Verified' : 'Smart Title Resolution';
+
+        const webDurSec = Number(state.currentWebDurationSeconds || state.currentWebsite?.durationSeconds || 0);
+        if (webDurationTimer) {
+          if (hasWebsite) {
+            webDurationTimer.textContent = `⏱️ ${formatSeconds(webDurSec)}`;
+            webDurationTimer.style.display = 'inline-flex';
+          } else {
+            webDurationTimer.style.display = 'none';
+          }
+        }
+
+        if (hasWebsite && state.currentWebsite) {
+          if (currentWebDomain) currentWebDomain.textContent = state.currentWebsite.domain;
+          if (currentWebTitle) {
+            currentWebTitle.textContent = state.currentWebsite.title || state.currentWebsite.domain;
+            currentWebTitle.classList.remove('hidden');
+          }
+          if (webTrackingSourceBadge) {
+            webTrackingSourceBadge.textContent = state.browserBridgeConnected ? 'Companion Extension Verified' : 'Smart Title Resolution';
+          }
+        } else {
+          // Browser active but awaiting extension ping
+          if (currentWebDomain) currentWebDomain.textContent = `${displayName} Active`;
+          if (currentWebTitle) {
+            currentWebTitle.textContent = state.browserBridgeConnected ? 'Navigating web pages...' : 'Companion extension standby';
+          }
+          if (webTrackingSourceBadge) {
+            webTrackingSourceBadge.textContent = state.browserBridgeConnected ? 'Browser Active' : 'Extension Ready';
+          }
         }
       } else {
-        // Browser active but awaiting extension ping
-        if (currentWebDomain) currentWebDomain.textContent = `${displayName} Active`;
-        if (currentWebTitle) {
-          currentWebTitle.textContent = state.browserBridgeConnected ? 'Navigating web pages...' : 'Companion extension standby';
-        }
-        if (webTrackingSourceBadge) {
-          webTrackingSourceBadge.textContent = state.browserBridgeConnected ? 'Browser Active' : 'Extension Ready';
+        if (activeWebsiteBox) {
+          activeWebsiteBox.classList.add('hidden');
+          activeWebsiteBox.style.display = 'none';
         }
       }
-    } else {
-      if (activeWebsiteBox) activeWebsiteBox.classList.add('hidden');
-    }
 
-    // Companion Extension Status Pill
-    if (extLivePill) {
-      if (state.browserBridgeConnected) {
-        extLivePill.className = 'ext-live-pill connected';
-        extLivePill.textContent = '🟢 Connected & Streaming';
+      // Companion Extension Status Pill
+      if (extLivePill) {
+        if (state.browserBridgeConnected) {
+          extLivePill.className = 'ext-live-pill connected';
+          extLivePill.textContent = '🟢 Connected & Streaming';
+        } else {
+          extLivePill.className = 'ext-live-pill waiting';
+          extLivePill.textContent = '🟡 Standby / Unloaded';
+        }
+      }
+
+      // Timers
+      if (activeTimer) activeTimer.textContent = formatSeconds(state.activeSeconds || 0);
+      if (idleTimer) idleTimer.textContent = formatSeconds(state.idleSeconds || 0);
+      if (breakTimer) breakTimer.textContent = formatSeconds(state.breakSeconds || 0);
+
+      // Primary Action Controls
+      if (state.isWorking) {
+        startWorkBtn.classList.add('hidden');
+        startWorkBtn.style.display = 'none';
+        endWorkBtn.classList.remove('hidden');
+        endWorkBtn.style.display = 'inline-flex';
+        breakControls.classList.remove('hidden');
+        breakControls.style.display = 'flex';
+        if (shiftNoticeText) {
+          shiftNoticeText.textContent = '';
+          shiftNoticeText.classList.remove('visible');
+        }
+
+        if (state.isOnBreak) {
+          startBreakBtn.classList.add('hidden');
+          startBreakBtn.style.display = 'none';
+          breakReasonSelect.classList.add('hidden');
+          breakReasonSelect.style.display = 'none';
+          endBreakBtn.classList.remove('hidden');
+          endBreakBtn.style.display = 'inline-flex';
+        } else {
+          startBreakBtn.classList.remove('hidden');
+          startBreakBtn.style.display = 'inline-flex';
+          breakReasonSelect.classList.remove('hidden');
+          breakReasonSelect.style.display = 'block';
+          endBreakBtn.classList.add('hidden');
+          endBreakBtn.style.display = 'none';
+        }
       } else {
-        extLivePill.className = 'ext-live-pill waiting';
-        extLivePill.textContent = '🟡 Standby / Unloaded';
-      }
-    }
-
-    // Timers
-    if (activeTimer) activeTimer.textContent = formatSeconds(state.activeSeconds || 0);
-    if (idleTimer) idleTimer.textContent = formatSeconds(state.idleSeconds || 0);
-    if (breakTimer) breakTimer.textContent = formatSeconds(state.breakSeconds || 0);
-
-    // Primary Action Controls
-    if (state.isWorking) {
-      startWorkBtn.classList.add('hidden');
-      endWorkBtn.classList.remove('hidden');
-      breakControls.classList.remove('hidden');
-      if (shiftNoticeText) {
-        shiftNoticeText.textContent = '';
-        shiftNoticeText.classList.remove('visible');
-      }
-
-      if (state.isOnBreak) {
-        startBreakBtn.classList.add('hidden');
-        breakReasonSelect.classList.add('hidden');
-        endBreakBtn.classList.remove('hidden');
-      } else {
-        startBreakBtn.classList.remove('hidden');
-        breakReasonSelect.classList.remove('hidden');
-        endBreakBtn.classList.add('hidden');
-      }
-    } else {
-      startWorkBtn.classList.remove('hidden');
-      endWorkBtn.classList.add('hidden');
-      breakControls.classList.add('hidden');
+        startWorkBtn.classList.remove('hidden');
+        startWorkBtn.style.display = 'inline-flex';
+        endWorkBtn.classList.add('hidden');
+        endWorkBtn.style.display = 'none';
+        breakControls.classList.add('hidden');
+        breakControls.style.display = 'none';
 
       const now = new Date();
       const curMins = now.getHours() * 60 + now.getMinutes();
@@ -452,6 +472,9 @@ function updateUI(state) {
     loginView.classList.remove('hidden');
     dashboardView.classList.add('hidden');
   }
+} catch (err) {
+  console.error('[Renderer] updateUI error:', err);
+}
 }
 
 // Diagnostics Accordion Toggle
@@ -516,6 +539,10 @@ startWorkBtn.addEventListener('click', async () => {
   try {
     await window.agentApi.startWork();
     showToast('Work session active! Monitoring started.', 'success');
+    if (window.agentApi && window.agentApi.getState) {
+      const freshState = await window.agentApi.getState();
+      updateUI(freshState);
+    }
   } catch (err) {
     showToast(err.message || 'Could not start work session.', 'error');
     startWorkBtn.disabled = false;
@@ -533,6 +560,10 @@ endWorkBtn.addEventListener('click', async () => {
   try {
     await window.agentApi.endWork();
     showToast('Work session successfully saved & ended.', 'success');
+    if (window.agentApi && window.agentApi.getState) {
+      const freshState = await window.agentApi.getState();
+      updateUI(freshState);
+    }
   } catch (err) {
     showToast('Error ending work: ' + (err.message || 'Unknown error'), 'error');
   } finally {
@@ -549,6 +580,10 @@ startBreakBtn.addEventListener('click', async () => {
   try {
     await window.agentApi.startBreak(reason);
     showToast('Break active. Session paused.', 'info');
+    if (window.agentApi && window.agentApi.getState) {
+      const freshState = await window.agentApi.getState();
+      updateUI(freshState);
+    }
   } catch (err) {
     showToast(err.message || 'Could not start break.', 'error');
   } finally {
@@ -563,6 +598,10 @@ endBreakBtn.addEventListener('click', async () => {
   try {
     await window.agentApi.endBreak();
     showToast('Resumed work session! Tracking active.', 'success');
+    if (window.agentApi && window.agentApi.getState) {
+      const freshState = await window.agentApi.getState();
+      updateUI(freshState);
+    }
   } catch (err) {
     showToast(err.message || 'Could not resume work.', 'error');
   } finally {
