@@ -1623,3 +1623,217 @@ input:focus, select:focus {
   color: #A5B4FC;
 }
 
+/* ============================================================ */
+/* ACCESSIBILITY FOCUS INDICATORS (WCAG 2.2 AA)                */
+/* ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Universal Button Interaction States */
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none !important;
+}
+
+/* ============================================================ */
+/* RESPONSIVE DESIGN FOR COMPACT & EXPANDED DESKTOP VIEWPORTS   */
+/* ============================================================ */
+
+/* Tablet / Medium Desktop Window (<= 560px) */
+@media (max-width: 560px) {
+  .app-container {
+    padding: 12px 14px 18px;
+    gap: 10px;
+  }
+
+  .app-header {
+    padding-bottom: 10px;
+  }
+
+  .brand-title {
+    font-size: 16px;
+  }
+
+  .brand-subtitle {
+    font-size: 10px;
+  }
+
+  .connection-pill {
+    padding: 4px 10px;
+    font-size: 10.5px;
+  }
+
+  .card {
+    padding: 14px;
+    border-radius: var(--radius-sm);
+  }
+
+  .ext-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .ext-btn-group {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .ext-btn-group .btn {
+    flex: 1;
+  }
+}
+
+/* Compact Window Mode (<= 460px) */
+@media (max-width: 460px) {
+  .app-container {
+    padding: 10px 10px 16px;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .brand-title {
+    font-size: 15px;
+  }
+
+  .login-card {
+    padding: 18px 14px;
+  }
+
+  .timer-grid {
+    gap: 6px;
+  }
+
+  .timer-item {
+    padding: 9px 5px;
+  }
+
+  .timer-label {
+    font-size: 9px;
+    letter-spacing: 0.02em;
+  }
+
+  .timer-val {
+    font-size: 13.5px;
+    letter-spacing: -0.03em;
+  }
+
+  .active-app-box,
+  .active-website-box {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .app-icon,
+  .web-icon {
+    font-size: 20px;
+    min-width: 26px;
+  }
+
+  .break-controls {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .break-controls .btn {
+    width: 100%;
+  }
+
+  .modal-card {
+    padding: 18px 16px;
+    margin: 12px;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .modal-actions .btn {
+    width: 100%;
+  }
+}
+
+/* Ultra-Compact Window (<= 380px) */
+@media (max-width: 380px) {
+  .timer-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .timer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  .timer-indicator-dot {
+    margin: 0;
+  }
+
+  .timer-val {
+    margin-top: 0;
+    font-size: 14px;
+  }
+
+  .badge-cluster {
+    flex-wrap: wrap;
+  }
+}
+
+/* Wide / Maximized Window (>= 720px) */
+@media (min-width: 720px) {
+  .app-container {
+    max-width: 720px;
+    padding: 18px 20px 26px;
+    gap: 16px;
+  }
+
+  .timer-item {
+    padding: 16px 14px;
+  }
+
+  .timer-val {
+    font-size: 20px;
+  }
+}
+
+/* User reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
