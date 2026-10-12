@@ -109,94 +109,110 @@ function createWindow() {
 }
 
 function createTray() {
-  const trayIconPath = getAssetPath('tray-icon.png');
-  const icoPath = getAssetPath('icon.ico');
-  let icon: Electron.NativeImage;
+  try {
+    const trayIconPath = getAssetPath('tray-icon.png');
+    const icoPath = getAssetPath('icon.ico');
+    let icon: Electron.NativeImage;
 
-  if (fs.existsSync(trayIconPath)) {
-    icon = nativeImage.createFromPath(trayIconPath);
-  } else if (fs.existsSync(icoPath)) {
-    icon = nativeImage.createFromPath(icoPath);
-  } else {
-    const iconBase64 =
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA7SURBVDhPY/wPBAwUACYGhgEGBgaG//8ZGBgY/jMwMDA8wKOBDAaA4BgNGBgYGBgY/mPDj1E3DNIN/wEArXgOD2z1FqAAAAAASUVORK5CYII=';
-    icon = nativeImage.createFromDataURL(iconBase64);
-  }
-
-  tray = new Tray(icon);
-  tray.setToolTip('HighP Activity Monitor');
-
-  const updateContextMenu = () => {
-    const state = agentService.getState();
-    const loginSettings = app.getLoginItemSettings();
-
-    const contextMenu = Menu.buildFromTemplate([
-      { label: `Status: ${state.currentStatus}`, enabled: false },
-      { label: `App: ${state.currentApplication}`, enabled: false },
-      { type: 'separator' },
-      {
-        label: state.isWorking ? 'End Work' : 'Start Work',
-        click: async () => {
-          if (state.isWorking) await agentService.endWork();
-          else await agentService.startWork();
-        }
-      },
-      {
-        label: state.isOnBreak ? 'Resume Work' : 'Take Break',
-        enabled: state.isWorking,
-        click: async () => {
-          if (state.isOnBreak) await agentService.endBreak();
-          else await agentService.startBreak('Lunch');
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Start with Windows',
-        type: 'checkbox',
-        checked: loginSettings.openAtLogin,
-        click: (menuItem) => {
-          app.setLoginItemSettings({
-            openAtLogin: menuItem.checked,
-            path: process.execPath
-          });
-        }
-      },
-      {
-        label: 'Open Dashboard',
-        click: () => {
-          mainWindow?.show();
-          mainWindow?.focus();
-        }
-      },
-      {
-        label: 'Quit',
-        click: async () => {
-          isQuitting = true;
-          agentService.handleAppShutdown();
-          await agentService.logout();
-          app.quit();
-        }
-      }
-    ]);
-    tray?.setContextMenu(contextMenu);
-  };
-
-  updateContextMenu();
-  tray.on('click', () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide();
+    if (fs.existsSync(trayIconPath)) {
+      icon = nativeImage.createFromPath(trayIconPath);
+    } else if (fs.existsSync(icoPath)) {
+      icon = nativeImage.createFromPath(icoPath);
     } else {
-      mainWindow?.show();
-      mainWindow?.focus();
+      const iconBase64 =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAA7SURBVDhPY/wPBAwUACYGhgEGBgaG//8ZGBgY/jMwMDA8wKOBDAaA4BgNGBgYGBgY/mPDj1E3DNIN/wEArXgOD2z1FqAAAAAASUVORK5CYII=';
+      icon = nativeImage.createFromDataURL(iconBase64);
     }
-  });
 
-  agentService.setStateChangeCallback((state) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('agent:state-update', state);
+    if (icon.isEmpty()) {
+      const pngPath = getAssetPath('icon.png');
+      if (fs.existsSync(pngPath)) {
+        icon = nativeImage.createFromPath(pngPath);
+      }
     }
+
+    tray = new Tray(icon);
+    tray.setToolTip('HighP Activity Monitor');
+
+    const updateContextMenu = () => {
+      const state = agentService.getState();
+      const loginSettings = app.getLoginItemSettings();
+
+      const contextMenu = Menu.buildFromTemplate([
+        { label: `Status: ${state.currentStatus}`, enabled: false },
+        { label: `App: ${state.currentApplication}`, enabled: false },
+        { type: 'separator' },
+        {
+          label: state.isWorking ? 'End Work' : 'Start Work',
+          click: async () => {
+            if (state.isWorking) await agentService.endWork();
+            else await agentService.startWork();
+          }
+        },
+        {
+          label: state.isOnBreak ? 'Resume Work' : 'Take Break',
+          enabled: state.isWorking,
+          click: async () => {
+            if (state.isOnBreak) await agentService.endBreak();
+            else await agentService.startBreak('Lunch');
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Start with Windows',
+          type: 'checkbox',
+          checked: loginSettings.openAtLogin,
+          click: (menuItem) => {
+            app.setLoginItemSettings({
+              openAtLogin: menuItem.checked,
+              path: process.execPath
+            });
+          }
+        },
+        {
+          label: 'Open Dashboard',
+          click: () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+          }
+        },
+        {
+          label: 'Quit',
+          click: async () => {
+            isQuitting = true;
+            agentService.handleAppShutdown();
+            await agentService.logout();
+            app.quit();
+          }
+        }
+      ]);
+      tray?.setContextMenu(contextMenu);
+    };
+
     updateContextMenu();
-  });
+    tray.on('click', () => {
+      if (mainWindow?.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow?.show();
+        mainWindow?.focus();
+      }
+    });
+
+    agentService.setStateChangeCallback((state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('agent:state-update', state);
+      }
+      updateContextMenu();
+    });
+  } catch (trayErr) {
+    console.warn('[Tray] System tray initialization warning:', trayErr);
+    agentService.setStateChangeCallback((state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('agent:state-update', state);
+      }
+    });
+  }
 }
 
 // IPC Handlers
@@ -204,8 +220,24 @@ ipcMain.handle('agent:login', async (_e, { apiUrl, email, pass }) => {
   return agentService.login(apiUrl, email, pass);
 });
 
+ipcMain.handle('agent:loginWithOtp', async (_e, { apiUrl, email, otp }) => {
+  return agentService.loginWithOtp(apiUrl, email, otp);
+});
+
+ipcMain.handle('agent:signup', async (_e, { apiUrl, signupData }) => {
+  return agentService.signup(apiUrl, signupData);
+});
+
+ipcMain.handle('agent:sendOtp', async (_e, { apiUrl, email, purpose }) => {
+  return agentService.sendOtp(apiUrl, email, purpose);
+});
+
 ipcMain.handle('agent:resetPassword', async (_e, { apiUrl, email, newPassword }) => {
   return agentService.resetPassword(apiUrl, email, newPassword);
+});
+
+ipcMain.handle('agent:resetPasswordWithOtp', async (_e, { apiUrl, email, otp, newPassword }) => {
+  return agentService.resetPasswordWithOtp(apiUrl, email, otp, newPassword);
 });
 
 ipcMain.handle('agent:logout', async () => {

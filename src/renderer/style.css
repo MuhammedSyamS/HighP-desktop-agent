@@ -259,6 +259,115 @@ body {
   margin-bottom: 14px;
 }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Auth Navigation Tabs */
+.auth-tabs-nav {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+}
+
+.auth-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.auth-tab-btn.active {
+  color: #FFFFFF;
+  background: var(--accent-primary);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+
+/* Sub-method Switcher */
+.sub-tabs-nav {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sub-tab-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sub-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.sub-tab-btn.active {
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Inline Input with Action Button */
+.input-with-action {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-action input {
+  flex: 1;
+}
+
+.btn-inline-action {
+  width: auto !important;
+  white-space: nowrap;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #A5B4FC;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-inline-action:hover:not(:disabled) {
+  background: var(--accent-primary);
+  color: #FFF;
+}
+
+.btn-inline-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 label {
   display: block;
   font-size: 12px;
@@ -762,10 +871,12 @@ input:focus, select:focus {
   display: flex;
   gap: 10px;
   align-items: stretch;
+  width: 100%;
 }
 
 .break-select-wrap {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   position: relative;
 }
 
@@ -789,6 +900,9 @@ input:focus, select:focus {
   background-position: right 14px center;
   transition: all 0.2s ease;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .break-select:hover {
@@ -807,16 +921,30 @@ input:focus, select:focus {
   padding: 10px;
 }
 
-#startBreakBtn, #endBreakBtn {
+#startBreakBtn {
+  width: auto !important;
+  min-width: 125px;
   height: 44px;
-  padding: 0 22px;
+  padding: 0 20px;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: 13.5px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+}
+
+#endBreakBtn {
+  width: 100% !important;
+  height: 44px;
+  padding: 0 20px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13.5px;
 }
 
 /* Extension Companion Card */
@@ -1152,6 +1280,7 @@ input:focus, select:focus {
 .hidden,
 .action-buttons .btn.hidden,
 .break-controls.hidden,
+.break-select-wrap.hidden,
 .active-website-box.hidden,
 .view-section.hidden {
   display: none !important;

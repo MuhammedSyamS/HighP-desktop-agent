@@ -1,6 +1,6 @@
 {
   "name": "highp-desktop-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "HighP Workforce Transparency & Activity Desktop Agent",
   "author": "HighP Haus",
   "main": "./dist/main/index.js",
@@ -117,7 +117,8 @@
       "shortcutName": "HighP Agent",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico"
+      "installerHeaderIcon": "assets/icon.ico",
+      "include": "build/installer.nsh"
     }
   }
 }

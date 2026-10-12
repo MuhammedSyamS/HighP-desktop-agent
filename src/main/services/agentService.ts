@@ -546,69 +546,129 @@ export class AgentService {
     return raw.replace(/\/+$/, '').replace(/\/api$/, '');
   }
 
+  private async processAuthSuccess(data: any): Promise<boolean> {
+    if (data && data.tokens) {
+      this.token = data.tokens.accessToken;
+      this.user = data.user;
+      this.company = data.company;
+
+      if (this.company?.config) {
+        if (this.company.config.idleThresholdMinutes) {
+          this.config.idleThresholdMinutes = this.company.config.idleThresholdMinutes;
+          this.trackingEngine.setIdleThreshold(this.config.idleThresholdMinutes * 60);
+        }
+        if (this.company.config.heartbeatIntervalSeconds) {
+          this.config.heartbeatIntervalSeconds = this.company.config.heartbeatIntervalSeconds;
+        }
+      }
+
+      this.saveAuthSessionToDisk();
+
+      await this.registerDevice();
+      await this.syncApplicationRegistry();
+
+      try {
+        const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+          timeout: 6000
+        });
+        if (sessRes.data?.hasCompletedShiftToday !== undefined) {
+          this.hasCompletedShiftToday = !!sessRes.data.hasCompletedShiftToday;
+        }
+        if (sessRes.data?.data && sessRes.data.data.status === 'ACTIVE') {
+          this.currentSessionId = sessRes.data.data._id;
+          this.isWorking = true;
+          this.isOnBreak = false;
+          this.hasCompletedShiftToday = false;
+          this.activeSeconds = sessRes.data.data.activeSeconds || 0;
+          this.idleSeconds = sessRes.data.data.idleSeconds || 0;
+          this.breakSeconds = sessRes.data.data.breakSeconds || 0;
+          this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
+        }
+      } catch {}
+
+      this.startLoops();
+      this.notifyStateChange();
+      return true;
+    }
+    return false;
+  }
+
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
     this.config.apiUrl = this.normalizeApiUrl(apiUrl);
     try {
       const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password }, { timeout: 12000 });
       if (res.data && res.data.data) {
-        this.token = res.data.data.tokens.accessToken;
-        this.user = res.data.data.user;
-        this.company = res.data.data.company;
-
-        if (this.company?.config) {
-          if (this.company.config.idleThresholdMinutes) {
-            this.config.idleThresholdMinutes = this.company.config.idleThresholdMinutes;
-            this.trackingEngine.setIdleThreshold(this.config.idleThresholdMinutes * 60);
-          }
-          if (this.company.config.heartbeatIntervalSeconds) {
-            this.config.heartbeatIntervalSeconds = this.company.config.heartbeatIntervalSeconds;
-          }
-        }
-
-        this.saveAuthSessionToDisk();
-
-        await this.registerDevice();
-        await this.syncApplicationRegistry();
-
-        try {
-          const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
-            headers: { Authorization: `Bearer ${this.token}` },
-            timeout: 6000
-          });
-          if (sessRes.data?.hasCompletedShiftToday !== undefined) {
-            this.hasCompletedShiftToday = !!sessRes.data.hasCompletedShiftToday;
-          }
-          if (sessRes.data?.data && sessRes.data.data.status === 'ACTIVE') {
-            this.currentSessionId = sessRes.data.data._id;
-            this.isWorking = true;
-            this.isOnBreak = false;
-            this.hasCompletedShiftToday = false;
-            this.activeSeconds = sessRes.data.data.activeSeconds || 0;
-            this.idleSeconds = sessRes.data.data.idleSeconds || 0;
-            this.breakSeconds = sessRes.data.data.breakSeconds || 0;
-            this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
-          }
-        } catch {}
-
-        this.startLoops();
-        this.notifyStateChange();
-        return true;
+        return await this.processAuthSuccess(res.data.data);
       }
       return false;
     } catch (err: any) {
-      console.error('[AgentService] Login error:', err.message);
-      throw err;
+      console.error('[AgentService] Login error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || err.message || 'Login failed. Please check credentials.');
+    }
+  }
+
+  public async loginWithOtp(apiUrl: string, email: string, otp: string): Promise<boolean> {
+    this.config.apiUrl = this.normalizeApiUrl(apiUrl);
+    try {
+      const res = await axios.post(`${this.config.apiUrl}/api/auth/otp/verify-login`, { email, otp }, { timeout: 12000 });
+      if (res.data && res.data.data) {
+        return await this.processAuthSuccess(res.data.data);
+      }
+      return false;
+    } catch (err: any) {
+      console.error('[AgentService] OTP login error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || err.message || 'OTP verification failed. Please try again.');
+    }
+  }
+
+  public async signup(apiUrl: string, signupData: any): Promise<boolean> {
+    this.config.apiUrl = this.normalizeApiUrl(apiUrl);
+    try {
+      const res = await axios.post(`${this.config.apiUrl}/api/auth/signup`, signupData, { timeout: 15000 });
+      if (res.data && res.data.data) {
+        return await this.processAuthSuccess(res.data.data);
+      }
+      return false;
+    } catch (err: any) {
+      console.error('[AgentService] Signup error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || err.message || 'Sign up failed. Please verify details.');
+    }
+  }
+
+  public async sendOtp(apiUrl: string, email: string, purpose: string = 'LOGIN'): Promise<{ success: boolean; message: string }> {
+    const cleanUrl = this.normalizeApiUrl(apiUrl);
+    try {
+      const res = await axios.post(`${cleanUrl}/api/auth/otp/send`, { email, purpose }, { timeout: 10000 });
+      return {
+        success: true,
+        message: res.data?.message || 'Verification code sent to email.'
+      };
+    } catch (err: any) {
+      console.error('[AgentService] Send OTP error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || 'Failed to send OTP code. Please check your email.');
     }
   }
 
   public async resetPassword(apiUrl: string, email: string, newPassword: string): Promise<boolean> {
     const cleanUrl = this.normalizeApiUrl(apiUrl);
     try {
-      const res = await axios.post(`${cleanUrl}/api/auth/reset-password`, { email, newPassword });
+      const res = await axios.post(`${cleanUrl}/api/auth/reset-password`, { email, newPassword }, { timeout: 10000 });
       return res.status === 200 || res.data?.status === 'SUCCESS';
     } catch (err: any) {
       console.error('[AgentService] Reset password error:', err.response?.data?.message || err.message);
       throw new Error(err.response?.data?.message || 'Failed to reset password. Please check your email.');
+    }
+  }
+
+  public async resetPasswordWithOtp(apiUrl: string, email: string, otp: string, newPassword: string): Promise<boolean> {
+    const cleanUrl = this.normalizeApiUrl(apiUrl);
+    try {
+      const res = await axios.post(`${cleanUrl}/api/auth/otp/reset-password`, { email, otp, newPassword }, { timeout: 10000 });
+      return res.status === 200 || res.data?.status === 'SUCCESS';
+    } catch (err: any) {
+      console.error('[AgentService] Reset password with OTP error:', err.response?.data?.message || err.message);
+      throw new Error(err.response?.data?.message || 'Failed to reset password with OTP.');
     }
   }
 
@@ -639,7 +699,7 @@ export class AgentService {
           },
           capabilities: this.telemetryProvider.getCapabilities(),
           permissions: this.telemetryProvider.getPermissions(),
-          agentVersion: '2.0.0'
+          agentVersion: '1.1.0'
         },
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 8000 }
       );

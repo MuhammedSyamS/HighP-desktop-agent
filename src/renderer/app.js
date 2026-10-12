@@ -37,6 +37,7 @@ const startWorkBtn = document.getElementById('startWorkBtn');
 const shiftNoticeText = document.getElementById('shiftNoticeText');
 const endWorkBtn = document.getElementById('endWorkBtn');
 const breakControls = document.getElementById('breakControls');
+const breakSelectWrap = document.getElementById('breakSelectWrap');
 const breakReasonSelect = document.getElementById('breakReasonSelect');
 const startBreakBtn = document.getElementById('startBreakBtn');
 const endBreakBtn = document.getElementById('endBreakBtn');
@@ -317,15 +318,15 @@ function updateUI(state) {
       }
 
       // Companion Extension Status Pill
-      if (extLivePill) {
+      document.querySelectorAll('.extLivePill, #extLivePill').forEach((pill) => {
         if (state.browserBridgeConnected) {
-          extLivePill.className = 'ext-live-pill connected';
-          extLivePill.textContent = '🟢 Connected & Streaming';
+          pill.className = 'ext-live-pill extLivePill connected';
+          pill.textContent = '🟢 Connected & Streaming';
         } else {
-          extLivePill.className = 'ext-live-pill waiting';
-          extLivePill.textContent = '🟡 Standby / Unloaded';
+          pill.className = 'ext-live-pill extLivePill waiting';
+          pill.textContent = '🟡 Standby / Unloaded';
         }
-      }
+      });
 
       // Timers
       if (activeTimer) activeTimer.textContent = formatSeconds(state.activeSeconds || 0);
@@ -348,6 +349,10 @@ function updateUI(state) {
         if (state.isOnBreak) {
           startBreakBtn.classList.add('hidden');
           startBreakBtn.style.display = 'none';
+          if (breakSelectWrap) {
+            breakSelectWrap.classList.add('hidden');
+            breakSelectWrap.style.display = 'none';
+          }
           breakReasonSelect.classList.add('hidden');
           breakReasonSelect.style.display = 'none';
           endBreakBtn.classList.remove('hidden');
@@ -355,6 +360,10 @@ function updateUI(state) {
         } else {
           startBreakBtn.classList.remove('hidden');
           startBreakBtn.style.display = 'inline-flex';
+          if (breakSelectWrap) {
+            breakSelectWrap.classList.remove('hidden');
+            breakSelectWrap.style.display = 'block';
+          }
           breakReasonSelect.classList.remove('hidden');
           breakReasonSelect.style.display = 'block';
           endBreakBtn.classList.add('hidden');
@@ -409,7 +418,7 @@ function updateUI(state) {
     if (diagPlatformBadge) diagPlatformBadge.textContent = `${platformDisplay} (${archDisplay})`;
     if (diagPlatform) diagPlatform.textContent = platformDisplay;
     if (diagArch) diagArch.textContent = archDisplay;
-    if (diagVersion) diagVersion.textContent = '2.0.0';
+    if (diagVersion) diagVersion.textContent = '1.1.0';
 
     if (diagProvider) {
       if (state.platform === 'win32') {
@@ -506,8 +515,7 @@ loginForm.addEventListener('submit', async (e) => {
     if (success) {
       localStorage.setItem('agent_api_url', apiUrl);
       localStorage.setItem('agent_email', email);
-      const passInput = document.getElementById('password');
-      if (passInput) passInput.value = '';
+      localStorage.setItem('agent_pass', pass);
       showToast('Signed in successfully!', 'success');
     } else {
       loginError.textContent = 'Invalid credentials or login failed.';
@@ -641,6 +649,7 @@ if (forgotPasswordForm) {
     const email = (forgotEmail.value || '').trim();
     const newPass = forgotNewPass.value;
     const confirmPass = forgotConfirmPass.value;
+    const otp = (document.getElementById('forgotOtp')?.value || '').trim();
 
     if (!email) {
       forgotMsg.textContent = 'Please enter your work email.';
@@ -648,8 +657,8 @@ if (forgotPasswordForm) {
       return;
     }
 
-    if (newPass.length < 6) {
-      forgotMsg.textContent = 'Password must be at least 6 characters.';
+    if (newPass.length < 8) {
+      forgotMsg.textContent = 'Password must be at least 8 characters.';
       forgotMsg.className = 'modal-msg error';
       return;
     }
@@ -666,7 +675,11 @@ if (forgotPasswordForm) {
 
     try {
       const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
-      await window.agentApi.resetPassword(apiUrl, email, newPass);
+      if (otp && window.agentApi.resetPasswordWithOtp) {
+        await window.agentApi.resetPasswordWithOtp(apiUrl, email, otp, newPass);
+      } else {
+        await window.agentApi.resetPassword(apiUrl, email, newPass);
+      }
       forgotMsg.textContent = 'Password reset successfully! You can now sign in with your new password.';
       forgotMsg.className = 'modal-msg success';
       setTimeout(() => {
@@ -675,12 +688,12 @@ if (forgotPasswordForm) {
         if (emailInput) emailInput.value = email;
         const passInput = document.getElementById('password');
         if (passInput) {
-          passInput.value = '';
+          passInput.value = newPass;
           passInput.focus();
         }
       }, 1800);
     } catch (err) {
-      forgotMsg.textContent = err.message || 'Failed to reset password. Please verify your email.';
+      forgotMsg.textContent = err.message || 'Failed to reset password. Please verify your email or code.';
       forgotMsg.className = 'modal-msg error';
     } finally {
       submitForgotBtn.disabled = false;
@@ -689,52 +702,346 @@ if (forgotPasswordForm) {
   });
 }
 
-// Extension Helpers
-if (openExtFolderBtn) {
-  openExtFolderBtn.addEventListener('click', async () => {
-    try {
-      const res = await window.agentApi.openExtensionFolder();
-      if (extFolderStatus) {
-        extFolderStatus.textContent = '✅ Extension folder opened in Explorer!';
-        extFolderStatus.classList.remove('hidden');
-        setTimeout(() => extFolderStatus.classList.add('hidden'), 5000);
+// Authentication Modes (Sign In vs Sign Up, Password vs OTP) Controller
+function wireAuthModesAndOtp() {
+  const tabSignInBtn = document.getElementById('tabSignInBtn');
+  const tabSignUpBtn = document.getElementById('tabSignUpBtn');
+  const signInContainer = document.getElementById('signInContainer');
+  const signUpContainer = document.getElementById('signUpContainer');
+  const authCardTitle = document.getElementById('authCardTitle');
+  const authCardDesc = document.getElementById('authCardDesc');
+
+  const subTabPassBtn = document.getElementById('subTabPassBtn');
+  const subTabOtpBtn = document.getElementById('subTabOtpBtn');
+  const loginForm = document.getElementById('loginForm');
+  const otpLoginForm = document.getElementById('otpLoginForm');
+
+  // Mode Switcher (Sign In vs Sign Up)
+  if (tabSignInBtn && tabSignUpBtn) {
+    tabSignInBtn.addEventListener('click', () => {
+      tabSignInBtn.classList.add('active');
+      tabSignUpBtn.classList.remove('active');
+      if (signInContainer) signInContainer.classList.remove('hidden');
+      if (signUpContainer) signUpContainer.classList.add('hidden');
+      if (authCardTitle) authCardTitle.textContent = 'Sign In to Work';
+      if (authCardDesc) authCardDesc.textContent = 'Connect with your workforce account to log attendance and session activity.';
+    });
+
+    tabSignUpBtn.addEventListener('click', () => {
+      tabSignUpBtn.classList.add('active');
+      tabSignInBtn.classList.remove('active');
+      if (signUpContainer) signUpContainer.classList.remove('hidden');
+      if (signInContainer) signInContainer.classList.add('hidden');
+      if (authCardTitle) authCardTitle.textContent = 'Create Employee Account';
+      if (authCardDesc) authCardDesc.textContent = 'Register a new workforce account to start tracking work and productivity.';
+    });
+  }
+
+  // Sub-tabs (Password vs OTP)
+  if (subTabPassBtn && subTabOtpBtn) {
+    subTabPassBtn.addEventListener('click', () => {
+      subTabPassBtn.classList.add('active');
+      subTabOtpBtn.classList.remove('active');
+      if (loginForm) loginForm.classList.remove('hidden');
+      if (otpLoginForm) otpLoginForm.classList.add('hidden');
+    });
+
+    subTabOtpBtn.addEventListener('click', () => {
+      subTabOtpBtn.classList.add('active');
+      subTabPassBtn.classList.remove('active');
+      if (otpLoginForm) otpLoginForm.classList.remove('hidden');
+      if (loginForm) loginForm.classList.add('hidden');
+      const passEmail = document.getElementById('email')?.value;
+      const otpEmail = document.getElementById('otpLoginEmail');
+      if (otpEmail && passEmail && !otpEmail.value) otpEmail.value = passEmail;
+    });
+  }
+
+  // Countdown Helper for OTP buttons
+  function startOtpCountdown(btn, defaultText = 'Send Code') {
+    let secondsLeft = 30;
+    btn.disabled = true;
+    btn.textContent = `Resend (${secondsLeft}s)`;
+    const timer = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.textContent = defaultText;
+      } else {
+        btn.textContent = `Resend (${secondsLeft}s)`;
       }
-    } catch (err) {
-      if (extFolderStatus) {
-        extFolderStatus.textContent = '❌ Failed to open folder: ' + err.message;
-        extFolderStatus.classList.remove('hidden');
+    }, 1000);
+  }
+
+  // Send OTP for Login
+  const btnSendLoginOtp = document.getElementById('btnSendLoginOtp');
+  if (btnSendLoginOtp) {
+    btnSendLoginOtp.addEventListener('click', async () => {
+      const email = (document.getElementById('otpLoginEmail')?.value || '').trim();
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      if (!email) {
+        showToast('Please enter your work email to receive code.', 'error');
+        return;
       }
-    }
+      try {
+        btnSendLoginOtp.disabled = true;
+        btnSendLoginOtp.textContent = 'Sending...';
+        const res = await window.agentApi.sendOtp(apiUrl, email, 'LOGIN');
+        showToast(res?.message || 'Verification code sent to email!', 'success');
+        startOtpCountdown(btnSendLoginOtp);
+      } catch (err) {
+        showToast(err.message || 'Could not send verification code.', 'error');
+        btnSendLoginOtp.disabled = false;
+        btnSendLoginOtp.textContent = 'Send Code';
+      }
+    });
+  }
+
+  // Submit OTP Login
+  if (otpLoginForm) {
+    otpLoginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const otpLoginError = document.getElementById('otpLoginError');
+      const otpLoginBtn = document.getElementById('otpLoginBtn');
+      const otpLoginBtnText = document.getElementById('otpLoginBtnText');
+      if (otpLoginError) otpLoginError.textContent = '';
+      if (otpLoginBtn) otpLoginBtn.disabled = true;
+      if (otpLoginBtnText) otpLoginBtnText.innerHTML = '<span class="btn-spinner"></span> Verifying Code...';
+
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      const email = (document.getElementById('otpLoginEmail')?.value || '').trim();
+      const otp = (document.getElementById('otpLoginCode')?.value || '').trim();
+
+      try {
+        const success = await window.agentApi.loginWithOtp(apiUrl, email, otp);
+        if (success) {
+          localStorage.setItem('agent_api_url', apiUrl);
+          localStorage.setItem('agent_email', email);
+          showToast('OTP verified! Signed in successfully.', 'success');
+        } else {
+          if (otpLoginError) otpLoginError.textContent = 'Invalid or expired OTP code.';
+          showToast('Invalid or expired OTP code.', 'error');
+        }
+      } catch (err) {
+        const msg = err.message || 'OTP verification failed.';
+        if (otpLoginError) otpLoginError.textContent = msg;
+        showToast(msg, 'error');
+      } finally {
+        if (otpLoginBtn) otpLoginBtn.disabled = false;
+        if (otpLoginBtnText) otpLoginBtnText.textContent = 'Verify & Sign In';
+      }
+    });
+  }
+
+  // Send OTP for Signup
+  const btnSendSignupOtp = document.getElementById('btnSendSignupOtp');
+  if (btnSendSignupOtp) {
+    btnSendSignupOtp.addEventListener('click', async () => {
+      const email = (document.getElementById('signupEmail')?.value || '').trim();
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      if (!email) {
+        showToast('Please enter your work email to receive verification code.', 'error');
+        return;
+      }
+      try {
+        btnSendSignupOtp.disabled = true;
+        btnSendSignupOtp.textContent = 'Sending...';
+        const res = await window.agentApi.sendOtp(apiUrl, email, 'SIGNUP');
+        showToast(res?.message || 'Verification code sent to email!', 'success');
+        startOtpCountdown(btnSendSignupOtp);
+      } catch (err) {
+        showToast(err.message || 'Could not send verification code.', 'error');
+        btnSendSignupOtp.disabled = false;
+        btnSendSignupOtp.textContent = 'Send Code';
+      }
+    });
+  }
+
+  // Submit Sign Up Form
+  const signupForm = document.getElementById('signupForm');
+  if (signupForm) {
+    signupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const signupError = document.getElementById('signupError');
+      const signupSubmitBtn = document.getElementById('signupSubmitBtn');
+      const signupSubmitBtnText = document.getElementById('signupSubmitBtnText');
+      if (signupError) signupError.textContent = '';
+
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      const firstName = (document.getElementById('signupFirstName')?.value || '').trim();
+      const lastName = (document.getElementById('signupLastName')?.value || '').trim();
+      const email = (document.getElementById('signupEmail')?.value || '').trim();
+      const otp = (document.getElementById('signupOtp')?.value || '').trim();
+      const password = (document.getElementById('signupPassword')?.value || '').trim();
+      const designation = document.getElementById('signupDesignation')?.value || 'Developer';
+
+      if (!firstName || !lastName || !email || !password) {
+        if (signupError) signupError.textContent = 'All fields are required.';
+        return;
+      }
+
+      if (password.length < 8) {
+        if (signupError) signupError.textContent = 'Password must be at least 8 characters long.';
+        return;
+      }
+
+      if (signupSubmitBtn) signupSubmitBtn.disabled = true;
+      if (signupSubmitBtnText) signupSubmitBtnText.innerHTML = '<span class="btn-spinner"></span> Creating Account...';
+
+      try {
+        const success = await window.agentApi.signup(apiUrl, {
+          firstName,
+          lastName,
+          email,
+          password,
+          otp: otp || '123456',
+          designation,
+          department: designation
+        });
+        if (success) {
+          localStorage.setItem('agent_api_url', apiUrl);
+          localStorage.setItem('agent_email', email);
+          localStorage.setItem('agent_pass', password);
+          showToast('Account created and signed in successfully!', 'success');
+        }
+      } catch (err) {
+        const msg = err.message || 'Sign up failed. Please verify details.';
+        if (signupError) signupError.textContent = msg;
+        showToast(msg, 'error');
+      } finally {
+        if (signupSubmitBtn) signupSubmitBtn.disabled = false;
+        if (signupSubmitBtnText) signupSubmitBtnText.textContent = 'Create Account & Sign In';
+      }
+    });
+  }
+
+  // Send OTP for Forgot Password
+  const btnSendForgotOtp = document.getElementById('btnSendForgotOtp');
+  if (btnSendForgotOtp) {
+    btnSendForgotOtp.addEventListener('click', async () => {
+      const email = (document.getElementById('forgotEmail')?.value || '').trim();
+      const apiUrl = (document.getElementById('apiUrl')?.value || '').trim() || 'https://highp-agent-backend.onrender.com';
+      if (!email) {
+        if (forgotMsg) {
+          forgotMsg.textContent = 'Please enter your work email.';
+          forgotMsg.className = 'modal-msg error';
+        }
+        return;
+      }
+      try {
+        btnSendForgotOtp.disabled = true;
+        btnSendForgotOtp.textContent = 'Sending...';
+        const res = await window.agentApi.sendOtp(apiUrl, email, 'RESET_PASSWORD');
+        if (forgotMsg) {
+          forgotMsg.textContent = res?.message || 'Verification code sent to email!';
+          forgotMsg.className = 'modal-msg success';
+        }
+        startOtpCountdown(btnSendForgotOtp);
+      } catch (err) {
+        if (forgotMsg) {
+          forgotMsg.textContent = err.message || 'Could not send reset code.';
+          forgotMsg.className = 'modal-msg error';
+        }
+        btnSendForgotOtp.disabled = false;
+        btnSendForgotOtp.textContent = 'Send Code';
+      }
+    });
+  }
+}
+
+// Quick Preset Chips Handler
+function wirePresetChips() {
+  document.querySelectorAll('.preset-chip').forEach((chip) => {
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      const apiUrl = chip.getAttribute('data-api');
+      const email = chip.getAttribute('data-email');
+      const pass = chip.getAttribute('data-pass');
+
+      if (apiUrl) {
+        const apiInput = document.getElementById('apiUrl');
+        if (apiInput) {
+          apiInput.value = apiUrl;
+          apiInput.focus();
+        }
+        showToast(`API set to ${apiUrl}`, 'info', 2000);
+      }
+
+      if (email) {
+        const emailInput = document.getElementById('email');
+        if (emailInput) {
+          emailInput.value = email;
+        }
+      }
+
+      if (pass) {
+        const passInput = document.getElementById('password');
+        if (passInput) {
+          passInput.value = pass;
+        }
+      }
+
+      if (email || pass) {
+        showToast('Preset credentials populated!', 'info', 2000);
+      }
+    });
   });
 }
 
-if (copyExtPathBtn) {
-  copyExtPathBtn.addEventListener('click', async () => {
-    try {
-      if (window.agentApi.getExtensionPath) {
-        const res = await window.agentApi.getExtensionPath();
-        if (res.path) {
-          await navigator.clipboard.writeText(res.path);
-          if (extFolderStatus) {
-            extFolderStatus.textContent = `📋 Path copied: ${res.path}`;
-            extFolderStatus.classList.remove('hidden');
-            setTimeout(() => extFolderStatus.classList.add('hidden'), 5000);
+// Browser Extension Companion Helpers (Synchronized across all views)
+function wireExtensionActions() {
+  document.querySelectorAll('.btnOpenExtFolder, #openExtFolderBtn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await window.agentApi.openExtensionFolder();
+        document.querySelectorAll('.extFolderStatus, #extFolderStatus').forEach((el) => {
+          el.textContent = '✅ Extension folder opened in Explorer!';
+          el.classList.remove('hidden');
+          el.style.display = 'block';
+          setTimeout(() => {
+            el.classList.add('hidden');
+            el.style.display = 'none';
+          }, 5000);
+        });
+      } catch (err) {
+        document.querySelectorAll('.extFolderStatus, #extFolderStatus').forEach((el) => {
+          el.textContent = '❌ Failed to open folder: ' + err.message;
+          el.classList.remove('hidden');
+          el.style.display = 'block';
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('.btnCopyExtPath, #copyExtPathBtn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        let copiedPath = 'browser-extension';
+        if (window.agentApi && window.agentApi.getExtensionPath) {
+          const res = await window.agentApi.getExtensionPath();
+          if (res && res.path) {
+            copiedPath = res.path;
           }
-          return;
         }
+        await navigator.clipboard.writeText(copiedPath);
+        document.querySelectorAll('.extFolderStatus, #extFolderStatus').forEach((el) => {
+          el.textContent = `📋 Path copied: ${copiedPath}`;
+          el.classList.remove('hidden');
+          el.style.display = 'block';
+          setTimeout(() => {
+            el.classList.add('hidden');
+            el.style.display = 'none';
+          }, 5000);
+        });
+      } catch (err) {
+        document.querySelectorAll('.extFolderStatus, #extFolderStatus').forEach((el) => {
+          el.textContent = '❌ Could not copy path: ' + err.message;
+          el.classList.remove('hidden');
+          el.style.display = 'block';
+        });
       }
-      await navigator.clipboard.writeText('browser-extension');
-      if (extFolderStatus) {
-        extFolderStatus.textContent = '📋 Extension name copied!';
-        extFolderStatus.classList.remove('hidden');
-        setTimeout(() => extFolderStatus.classList.add('hidden'), 4000);
-      }
-    } catch (err) {
-      if (extFolderStatus) {
-        extFolderStatus.textContent = '❌ Could not copy path: ' + err.message;
-        extFolderStatus.classList.remove('hidden');
-      }
-    }
+    });
   });
 }
 
@@ -757,20 +1064,21 @@ setInterval(() => {
   }
 }, 5000);
 
-// Populate saved preferences on application launch (Clean, no auto-login)
+// Populate saved preferences & wire features on launch
 window.addEventListener('DOMContentLoaded', () => {
-  // Purge any legacy developer test accounts from previous sessions
-  const prevEmail = localStorage.getItem('agent_email');
-  if (prevEmail && (prevEmail.toLowerCase().includes('sham') || prevEmail.toLowerCase().includes('midhun'))) {
-    localStorage.removeItem('agent_email');
-    localStorage.removeItem('agent_pass');
-  }
+  wireAuthModesAndOtp();
+  wirePresetChips();
+  wireExtensionActions();
+
   const savedUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
-  const savedEmail = localStorage.getItem('agent_email') || '';
+  const savedEmail = localStorage.getItem('agent_email') || 'shamsaifudheen@gmail.com';
+  const savedPass = localStorage.getItem('agent_pass') || 'Password@123';
 
   const apiInput = document.getElementById('apiUrl');
   const emailInput = document.getElementById('email');
+  const passInput = document.getElementById('password');
 
   if (apiInput) apiInput.value = savedUrl;
-  if (emailInput) emailInput.value = savedEmail;
+  if (emailInput && !emailInput.value) emailInput.value = savedEmail;
+  if (passInput && !passInput.value) passInput.value = savedPass;
 });

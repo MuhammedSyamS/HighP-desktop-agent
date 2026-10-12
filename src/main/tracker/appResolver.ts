@@ -1135,7 +1135,7 @@ export function resolveApplication(
   }
 
   const generatedAppId = slugify(displayName) || 'unknown-application';
-  const isStillUnknown = displayName === 'Unknown Application';
+  const isGeneric = displayName === 'Unknown Application';
 
   return {
     applicationId: generatedAppId,
@@ -1151,9 +1151,9 @@ export function resolveApplication(
     trackingState: inferredTrackingState,
     tracked: !isSystemWindow,
     ignored: isSystemWindow,
-    isUnknown: isStillUnknown,
-    isRecognized: !isStillUnknown,
-    confidence: isStillUnknown ? 'unknown' : 'medium'
+    isUnknown: true,
+    isRecognized: false,
+    confidence: isGeneric ? 'unknown' : 'medium'
   };
 }
 

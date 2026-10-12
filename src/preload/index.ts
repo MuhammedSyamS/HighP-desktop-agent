@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('agentApi', {
   login: (apiUrl: string, email: string, pass: string) => ipcRenderer.invoke('agent:login', { apiUrl, email, pass }),
+  loginWithOtp: (apiUrl: string, email: string, otp: string) => ipcRenderer.invoke('agent:loginWithOtp', { apiUrl, email, otp }),
+  signup: (apiUrl: string, signupData: any) => ipcRenderer.invoke('agent:signup', { apiUrl, signupData }),
+  sendOtp: (apiUrl: string, email: string, purpose?: string) => ipcRenderer.invoke('agent:sendOtp', { apiUrl, email, purpose }),
   logout: () => ipcRenderer.invoke('agent:logout'),
   startWork: () => ipcRenderer.invoke('agent:startWork'),
   endWork: () => ipcRenderer.invoke('agent:endWork'),
@@ -14,6 +17,8 @@ contextBridge.exposeInMainWorld('agentApi', {
   getExtensionPath: () => ipcRenderer.invoke('agent:getExtensionPath'),
   resetPassword: (apiUrl: string, email: string, newPassword: string) =>
     ipcRenderer.invoke('agent:resetPassword', { apiUrl, email, newPassword }),
+  resetPasswordWithOtp: (apiUrl: string, email: string, otp: string, newPassword: string) =>
+    ipcRenderer.invoke('agent:resetPasswordWithOtp', { apiUrl, email, otp, newPassword }),
   onStateUpdate: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
     ipcRenderer.on('agent:state-update', handler);

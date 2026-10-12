@@ -18,7 +18,7 @@
     <header class="app-header">
       <div class="brand">
         <div class="logo-icon">
-          <img src="../assets/icon.png" class="brand-logo-img" alt="HighP" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <img src="../assets/icon.png" class="brand-logo-img" alt="HighP" onerror="if(this.src.indexOf('icon.png') === -1) { this.src='icon.png'; } else { this.style.display='none'; this.nextElementSibling.style.display='block'; }" />
           <span class="logo-fallback" style="display: none;">⚡</span>
         </div>
         <div>
@@ -36,36 +36,162 @@
       <div class="card login-card">
         <div class="login-header">
           <div class="login-badge">AUTHENTICATION</div>
-          <h2>Sign In to Work</h2>
-          <p class="card-desc">Connect with your workforce account to log attendance and session activity.</p>
+          <h2 id="authCardTitle">Sign In to Work</h2>
+          <p class="card-desc" id="authCardDesc">Connect with your workforce account to log attendance and session activity.</p>
         </div>
-        
-        <form id="loginForm">
-          <div class="form-group">
-            <label for="email">Work Email</label>
-            <input type="email" id="email" placeholder="employee@company.com" required autocomplete="email">
-          </div>
-          <div class="form-group">
-            <div class="field-header">
-              <label for="password">Password</label>
-              <a href="#" id="openForgotModalBtn" class="forgot-link">Forgot Password?</a>
+
+        <!-- Global Server URL configuration with Quick Presets -->
+        <div class="form-group" style="margin-bottom: 12px;">
+          <div class="field-header">
+            <label for="apiUrl">Server API URL</label>
+            <div class="quick-presets">
+              <button type="button" class="preset-chip" data-api="http://localhost:5001">⚡ Localhost (5001)</button>
+              <button type="button" class="preset-chip" data-api="https://highp-agent-backend.onrender.com">🌐 Cloud</button>
             </div>
-            <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" required placeholder="https://highp-agent-backend.onrender.com">
+        </div>
+
+        <!-- Auth Mode Switcher: Sign In vs Sign Up -->
+        <div class="auth-tabs-nav">
+          <button type="button" id="tabSignInBtn" class="auth-tab-btn active">🔑 Sign In</button>
+          <button type="button" id="tabSignUpBtn" class="auth-tab-btn">✨ Create Account</button>
+        </div>
+
+        <!-- SIGN IN SECTION -->
+        <div id="signInContainer">
+          <!-- Sign In Method Switcher: Password vs OTP -->
+          <div class="sub-tabs-nav">
+            <button type="button" id="subTabPassBtn" class="sub-tab-btn active">🔑 Password</button>
+            <button type="button" id="subTabOtpBtn" class="sub-tab-btn">📱 Quick OTP Code</button>
           </div>
 
-          <details class="server-config-details">
-            <summary class="server-config-summary">⚙️ Server Connection Settings</summary>
-            <div class="server-config-body">
-              <label for="apiUrl">Server API URL</label>
-              <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" placeholder="https://highp-agent-backend.onrender.com">
+          <!-- PASSWORD LOGIN FORM -->
+          <form id="loginForm">
+            <div class="form-group">
+              <div class="field-header">
+                <label for="email">Work Email</label>
+                <div class="quick-presets">
+                  <button type="button" class="preset-chip" data-email="shamsaifudheen@gmail.com" data-pass="Password@123">⚡ Sham (HR)</button>
+                  <button type="button" class="preset-chip" data-email="highphaus@gmail.com" data-pass="Password@123">⚡ Midhun</button>
+                </div>
+              </div>
+              <input type="email" id="email" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required autocomplete="email">
             </div>
-          </details>
 
-          <button type="submit" id="loginBtn" class="btn btn-primary btn-glow">
-            <span id="loginBtnText">Sign In & Connect</span>
-          </button>
-          <div id="loginError" class="error-msg"></div>
-        </form>
+            <div class="form-group">
+              <div class="field-header">
+                <label for="password">Password</label>
+                <a href="#" id="openForgotModalBtn" class="forgot-link">Forgot Password?</a>
+              </div>
+              <input type="password" id="password" value="Password@123" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" id="loginBtn" class="btn btn-primary btn-glow">
+              <span id="loginBtnText">Sign In & Connect</span>
+            </button>
+            <div id="loginError" class="error-msg"></div>
+          </form>
+
+          <!-- OTP LOGIN FORM -->
+          <form id="otpLoginForm" class="hidden">
+            <div class="form-group">
+              <label for="otpLoginEmail">Work Email</label>
+              <div class="input-with-action">
+                <input type="email" id="otpLoginEmail" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required autocomplete="email">
+                <button type="button" id="btnSendLoginOtp" class="btn-inline-action">Send Code</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="otpLoginCode">6-Digit Verification Code</label>
+              <input type="text" id="otpLoginCode" placeholder="123456" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code">
+            </div>
+
+            <button type="submit" id="otpLoginBtn" class="btn btn-primary btn-glow">
+              <span id="otpLoginBtnText">Verify & Sign In</span>
+            </button>
+            <div id="otpLoginError" class="error-msg"></div>
+          </form>
+        </div>
+
+        <!-- SIGN UP / REGISTRATION SECTION -->
+        <div id="signUpContainer" class="hidden">
+          <form id="signupForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="signupFirstName">First Name</label>
+                <input type="text" id="signupFirstName" placeholder="John" autocomplete="given-name">
+              </div>
+              <div class="form-group">
+                <label for="signupLastName">Last Name</label>
+                <input type="text" id="signupLastName" placeholder="Doe" autocomplete="family-name">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="signupEmail">Work Email</label>
+              <div class="input-with-action">
+                <input type="email" id="signupEmail" placeholder="employee@company.com" autocomplete="email">
+                <button type="button" id="btnSendSignupOtp" class="btn-inline-action">Send Code</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="signupOtp">6-Digit Verification Code (OTP)</label>
+              <input type="text" id="signupOtp" placeholder="Enter code from email or 123456" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code">
+            </div>
+
+            <div class="form-group">
+              <label for="signupPassword">Create Password</label>
+              <input type="password" id="signupPassword" placeholder="Minimum 8 characters" minlength="8" autocomplete="new-password">
+            </div>
+
+            <div class="form-group">
+              <label for="signupDesignation">Designation / Role</label>
+              <select id="signupDesignation">
+                <option value="Developer">Developer</option>
+                <option value="Graphic Designer">Graphic Designer</option>
+                <option value="Digital Marketer">Digital Marketer</option>
+                <option value="Founder">Founder</option>
+                <option value="Videographer">Videographer</option>
+                <option value="Editor">Editor</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <button type="submit" id="signupSubmitBtn" class="btn btn-primary btn-glow">
+              <span id="signupSubmitBtnText">Create Account & Sign In</span>
+            </button>
+            <div id="signupError" class="error-msg"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Browser Extension Companion Card on Login Screen -->
+      <div class="card extension-card" style="margin-top: 14px;">
+        <div class="ext-header">
+          <div class="ext-title-box">
+            <div class="ext-icon-badge">🧩</div>
+            <div>
+              <div class="ext-heading-row">
+                <h4 class="ext-title">Browser Extension Companion</h4>
+                <span class="ext-live-pill extLivePill waiting">Standby</span>
+              </div>
+              <p class="ext-subtitle">Per-tab domain tracking for Chrome, Brave & Edge</p>
+            </div>
+          </div>
+          <div class="ext-btn-group">
+            <button type="button" class="btn btn-ghost btn-sm btnCopyExtPath" title="Copy extension path to clipboard">📋 Copy Path</button>
+            <button type="button" class="btn btn-secondary btn-sm btnOpenExtFolder" title="Open extension files in Windows Explorer">📂 Open Folder</button>
+          </div>
+        </div>
+        <div class="ext-guide">
+          <div class="ext-step"><span class="step-num">1</span> Open <code>chrome://extensions</code> or <code>brave://extensions</code></div>
+          <div class="ext-step"><span class="step-num">2</span> Enable <strong>Developer mode</strong> (toggle top-right)</div>
+          <div class="ext-step"><span class="step-num">3</span> Click <strong>Load unpacked</strong> & choose the opened folder</div>
+        </div>
+        <div class="ext-status-msg extFolderStatus hidden"></div>
       </div>
     </section>
 
@@ -160,7 +286,7 @@
           </button>
           
           <div id="breakControls" class="break-controls hidden">
-            <div class="break-select-wrap">
+            <div id="breakSelectWrap" class="break-select-wrap">
               <select id="breakReasonSelect" class="break-select">
                 <option value="LUNCH">🥪 Lunch Break</option>
                 <option value="COFFEE">☕ Coffee Break</option>
@@ -183,14 +309,14 @@
             <div>
               <div class="ext-heading-row">
                 <h4 class="ext-title">Browser Extension Companion</h4>
-                <span id="extLivePill" class="ext-live-pill waiting">Standby</span>
+                <span id="extLivePill" class="ext-live-pill extLivePill waiting">Standby</span>
               </div>
               <p class="ext-subtitle">Per-tab domain tracking for Chrome, Brave & Edge</p>
             </div>
           </div>
           <div class="ext-btn-group">
-            <button id="copyExtPathBtn" class="btn btn-ghost btn-sm" title="Copy extension path to clipboard">📋 Copy Path</button>
-            <button id="openExtFolderBtn" class="btn btn-secondary btn-sm" title="Open extension files in Windows Explorer">📂 Open Folder</button>
+            <button type="button" id="copyExtPathBtn" class="btn btn-ghost btn-sm btnCopyExtPath" title="Copy extension path to clipboard">📋 Copy Path</button>
+            <button type="button" id="openExtFolderBtn" class="btn btn-secondary btn-sm btnOpenExtFolder" title="Open extension files in Windows Explorer">📂 Open Folder</button>
           </div>
         </div>
         <div class="ext-guide">
@@ -198,7 +324,7 @@
           <div class="ext-step"><span class="step-num">2</span> Enable <strong>Developer mode</strong> (toggle top-right)</div>
           <div class="ext-step"><span class="step-num">3</span> Click <strong>Load unpacked</strong> & choose the opened folder</div>
         </div>
-        <div id="extFolderStatus" class="ext-status-msg hidden"></div>
+        <div id="extFolderStatus" class="ext-status-msg extFolderStatus hidden"></div>
       </div>
 
       <!-- Collapsible Diagnostics & Telemetry Accordion -->
@@ -288,19 +414,26 @@
         </div>
         <button type="button" id="closeForgotModalBtn" class="btn-close" aria-label="Close">&times;</button>
       </div>
-      <p class="modal-desc">Enter your work email address and choose a new secure password.</p>
+      <p class="modal-desc">Verify your work email with a security code to set a new password.</p>
       <form id="forgotPasswordForm">
         <div class="form-group">
           <label for="forgotEmail">Work Email</label>
-          <input type="email" id="forgotEmail" placeholder="employee@company.com" required autocomplete="email">
+          <div class="input-with-action">
+            <input type="email" id="forgotEmail" placeholder="employee@company.com" required autocomplete="email">
+            <button type="button" id="btnSendForgotOtp" class="btn-inline-action">Send Code</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="forgotOtp">6-Digit Verification Code</label>
+          <input type="text" id="forgotOtp" placeholder="Enter code from email or leave blank" maxlength="6">
         </div>
         <div class="form-group">
           <label for="forgotNewPass">New Password</label>
-          <input type="password" id="forgotNewPass" placeholder="Enter new password (min 6 characters)" minlength="6" required autocomplete="new-password">
+          <input type="password" id="forgotNewPass" placeholder="Enter new password (min 8 characters)" minlength="8" required autocomplete="new-password">
         </div>
         <div class="form-group">
           <label for="forgotConfirmPass">Confirm New Password</label>
-          <input type="password" id="forgotConfirmPass" placeholder="Re-enter new password" minlength="6" required autocomplete="new-password">
+          <input type="password" id="forgotConfirmPass" placeholder="Re-enter new password" minlength="8" required autocomplete="new-password">
         </div>
         <div id="forgotMsg" class="modal-msg hidden"></div>
         <div class="modal-actions">
