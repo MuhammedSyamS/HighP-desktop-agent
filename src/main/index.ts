@@ -17,10 +17,12 @@ if (!gotTheLock) {
 }
 
 app.on('second-instance', () => {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
-    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.show();
     mainWindow.focus();
+  } else {
+    createWindow();
   }
 });
 
@@ -74,6 +76,7 @@ function createWindow() {
     minWidth: 440,
     minHeight: 620,
     resizable: true,
+    show: true,
     title: 'HighP Agent - Employee Transparency Monitor',
     icon: appIcon,
     autoHideMenuBar: true,
@@ -85,7 +88,16 @@ function createWindow() {
   });
 
   const rendererPath = path.join(__dirname, '../renderer/index.html');
-  mainWindow.loadFile(rendererPath);
+  mainWindow.loadFile(rendererPath).catch((err) => {
+    console.error('[MainWindow] Error loading renderer index.html:', err);
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
 
   mainWindow.on('close', (event) => {
     // Minimize to tray instead of quitting if active work session is running
