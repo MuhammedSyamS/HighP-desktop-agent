@@ -100,12 +100,14 @@ export class AgentService {
   private idleSeconds = 0;
   private breakSeconds = 0;
   private hasCompletedShiftToday = false;
+  private sessionStartHour: number = 9;
 
   // Application registry
   private dynamicRegistry: TrackedApplicationEntry[] = [];
   private registryVersion = 0;
   private registryFilePath: string;
   private crashRecoveryFilePath: string;
+  private authSessionFilePath: string;
   private reportedUnknownExes: Set<string> = new Set();
   private registrySyncTimer: NodeJS.Timeout | null = null;
 
@@ -138,6 +140,7 @@ export class AgentService {
     }
     this.registryFilePath = path.join(baseDir, 'highp-app-registry.json');
     this.crashRecoveryFilePath = path.join(baseDir, 'highp-crash-recovery.json');
+    this.authSessionFilePath = path.join(baseDir, 'highp-auth-session.json');
 
     // 1. Stable, persistent Device Identity across restarts (Requirement 8)
     const idFile = path.join(baseDir, 'highp-device-identity.json');
@@ -196,6 +199,93 @@ export class AgentService {
       console.warn('[AgentService] Telemetry provider start warning:', err.message);
     });
     browserBridge.start();
+
+    // 3. Restore persisted employee session if available (clean startup auto-connect)
+    this.loadAuthSessionFromDisk();
+  }
+
+  private loadAuthSessionFromDisk(): void {
+    try {
+      if (fs.existsSync(this.authSessionFilePath)) {
+        const raw = fs.readFileSync(this.authSessionFilePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && data.token) {
+          this.token = data.token;
+          this.user = data.user || null;
+          this.company = data.company || null;
+          if (data.apiUrl) {
+            this.config.apiUrl = this.normalizeApiUrl(data.apiUrl);
+          }
+          console.log('[AgentService] Restored saved login for:', this.user?.email || 'User');
+          setTimeout(() => {
+            this.validateRestoredSession().catch(() => {});
+          }, 300);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AgentService] Could not read auth session file:', err.message);
+    }
+  }
+
+  private saveAuthSessionToDisk(): void {
+    try {
+      if (this.token) {
+        const payload = {
+          token: this.token,
+          user: this.user,
+          company: this.company,
+          apiUrl: this.config.apiUrl,
+          savedAt: new Date().toISOString()
+        };
+        fs.writeFileSync(this.authSessionFilePath, JSON.stringify(payload, null, 2), 'utf-8');
+      } else {
+        if (fs.existsSync(this.authSessionFilePath)) {
+          fs.unlinkSync(this.authSessionFilePath);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AgentService] Could not write auth session file:', err.message);
+    }
+  }
+
+  private async validateRestoredSession(): Promise<void> {
+    if (!this.token) return;
+    try {
+      await this.registerDevice();
+      await this.syncApplicationRegistry();
+
+      const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
+        headers: { Authorization: `Bearer ${this.token}` },
+        timeout: 6000
+      });
+
+      if (sessRes.data?.hasCompletedShiftToday !== undefined) {
+        this.hasCompletedShiftToday = !!sessRes.data.hasCompletedShiftToday;
+      }
+
+      if (sessRes.data?.data && sessRes.data.data.status === 'ACTIVE') {
+        this.currentSessionId = sessRes.data.data._id;
+        this.isWorking = true;
+        this.isOnBreak = false;
+        this.hasCompletedShiftToday = false;
+        this.activeSeconds = sessRes.data.data.activeSeconds || 0;
+        this.idleSeconds = sessRes.data.data.idleSeconds || 0;
+        this.breakSeconds = sessRes.data.data.breakSeconds || 0;
+        this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
+      }
+
+      this.startLoops();
+      this.notifyStateChange();
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        console.warn('[AgentService] Saved auth token expired. Logging out.');
+        await this.logout();
+      } else {
+        // Allow offline tracking
+        this.startLoops();
+        this.notifyStateChange();
+      }
+    }
   }
 
   private loadRegistryFromDisk(): void {
@@ -459,7 +549,7 @@ export class AgentService {
   public async login(apiUrl: string, email: string, password: string): Promise<boolean> {
     this.config.apiUrl = this.normalizeApiUrl(apiUrl);
     try {
-      const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password });
+      const res = await axios.post(`${this.config.apiUrl}/api/auth/login`, { email, password }, { timeout: 12000 });
       if (res.data && res.data.data) {
         this.token = res.data.data.tokens.accessToken;
         this.user = res.data.data.user;
@@ -475,12 +565,15 @@ export class AgentService {
           }
         }
 
+        this.saveAuthSessionToDisk();
+
         await this.registerDevice();
         await this.syncApplicationRegistry();
 
         try {
           const sessRes = await axios.get(`${this.config.apiUrl}/api/agent/session/current`, {
-            headers: { Authorization: `Bearer ${this.token}` }
+            headers: { Authorization: `Bearer ${this.token}` },
+            timeout: 6000
           });
           if (sessRes.data?.hasCompletedShiftToday !== undefined) {
             this.hasCompletedShiftToday = !!sessRes.data.hasCompletedShiftToday;
@@ -489,6 +582,7 @@ export class AgentService {
             this.currentSessionId = sessRes.data.data._id;
             this.isWorking = true;
             this.isOnBreak = false;
+            this.hasCompletedShiftToday = false;
             this.activeSeconds = sessRes.data.data.activeSeconds || 0;
             this.idleSeconds = sessRes.data.data.idleSeconds || 0;
             this.breakSeconds = sessRes.data.data.breakSeconds || 0;
@@ -523,6 +617,7 @@ export class AgentService {
     this.token = null;
     this.user = null;
     this.company = null;
+    this.saveAuthSessionToDisk();
     this.notifyStateChange();
   }
 
@@ -546,7 +641,7 @@ export class AgentService {
           permissions: this.telemetryProvider.getPermissions(),
           agentVersion: '2.0.0'
         },
-        { headers: { Authorization: `Bearer ${this.token}` } }
+        { headers: { Authorization: `Bearer ${this.token}` }, timeout: 8000 }
       );
       this.isOnline = true;
     } catch {}
@@ -556,34 +651,35 @@ export class AgentService {
     if (!this.token) throw new Error('Must be logged in to start work');
 
     const now = new Date();
-    const curMins = now.getHours() * 60 + now.getMinutes();
-    if (curMins < 8 * 60 + 30) {
-      throw new Error('Work sessions can only be started from 8:30 AM onwards.');
-    }
-    if (curMins >= 17 * 60) {
-      throw new Error('Today\'s work shift ended at 5:00 PM. Next shift starts tomorrow at 8:30 AM.');
-    }
-    if (this.hasCompletedShiftToday) {
-      throw new Error('You have already completed your shift for today. Next work session starts tomorrow at 8:30 AM.');
-    }
+    this.sessionStartHour = now.getHours();
 
+    let startedRemote = false;
     try {
       const res = await axios.post(
         `${this.config.apiUrl}/api/agent/session/start`,
         { deviceId: this.deviceIdentifier },
-        { headers: { Authorization: `Bearer ${this.token}` } }
+        { headers: { Authorization: `Bearer ${this.token}` }, timeout: 6000 }
       );
 
-      this.currentSessionId = res.data.data._id;
-      this.isWorking = true;
-      this.isOnBreak = false;
-      this.activeSeconds = res.data.data?.activeSeconds || 0;
-      this.idleSeconds = res.data.data?.idleSeconds || 0;
-      this.breakSeconds = res.data.data?.breakSeconds || 0;
-    } catch {
+      if (res.data?.data?._id) {
+        this.currentSessionId = res.data.data._id;
+        this.isWorking = true;
+        this.isOnBreak = false;
+        this.hasCompletedShiftToday = false;
+        this.activeSeconds = Number(res.data.data?.activeSeconds || 0);
+        this.idleSeconds = Number(res.data.data?.idleSeconds || 0);
+        this.breakSeconds = Number(res.data.data?.breakSeconds || 0);
+        startedRemote = true;
+      }
+    } catch (err: any) {
+      console.warn('[AgentService] Remote session/start timed out or error. Seamlessly continuing in fast local session mode:', err?.message);
+    }
+
+    if (!startedRemote) {
       this.currentSessionId = `local-${uuidv4()}`;
       this.isWorking = true;
       this.isOnBreak = false;
+      this.hasCompletedShiftToday = false;
       this.activeSeconds = 0;
       this.idleSeconds = 0;
       this.breakSeconds = 0;
@@ -605,7 +701,7 @@ export class AgentService {
         await axios.post(
           `${this.config.apiUrl}/api/agent/session/end`,
           { sessionId: endingSessionId, endReason: 'Agent Stopped' },
-          { headers: { Authorization: `Bearer ${this.token}` } }
+          { headers: { Authorization: `Bearer ${this.token}` }, timeout: 6000 }
         );
       } catch {}
     }
@@ -635,7 +731,7 @@ export class AgentService {
         await axios.post(
           `${this.config.apiUrl}/api/breaks/start`,
           { reason, note },
-          { headers: { Authorization: `Bearer ${this.token}` } }
+          { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
         );
       } catch {}
     }
@@ -652,7 +748,7 @@ export class AgentService {
         await axios.post(
           `${this.config.apiUrl}/api/breaks/end`,
           {},
-          { headers: { Authorization: `Bearer ${this.token}` } }
+          { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
         );
       } catch {}
     }
@@ -700,10 +796,12 @@ export class AgentService {
   private async runTrackingTick(): Promise<void> {
     if (!this.isWorking) return;
 
-    // 5:00 PM (17:00) Automatic Shift End Policy (Shift: 9:00 AM - 5:00 PM)
+    // 5:00 PM (17:00) Automatic Shift End Policy for daytime sessions (Shift: 9:00 AM - 5:00 PM)
+    // Only auto-end sessions that were started during the regular daytime shift (< 17:00),
+    // and never prematurely abort overtime sessions started at or after 5:00 PM.
     const now = new Date();
-    if (this.isWorking && now.getHours() >= 17) {
-      console.log('[AgentService] 5:00 PM shift end reached. Concluding work session automatically.');
+    if (this.isWorking && this.sessionStartHour < 17 && now.getHours() >= 17) {
+      console.log('[AgentService] 5:00 PM daytime shift end reached. Concluding daytime work session.');
       await this.endWork();
       return;
     }

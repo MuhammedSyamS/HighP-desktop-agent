@@ -96,6 +96,39 @@ const telemetryErrorText = document.getElementById('telemetryErrorText');
 const offlineQueueBar = document.getElementById('offlineQueueBar');
 const queueCount = document.getElementById('queueCount');
 
+function showToast(message, type = 'info', duration = 3500) {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  
+  const icon = type === 'success' ? '✅' : (type === 'error' ? '❌' : '⚡');
+  toast.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <span class="toast-message">${message}</span>
+  `;
+
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.classList.add('toast-show');
+  });
+
+  setTimeout(() => {
+    toast.classList.remove('toast-show');
+    toast.classList.add('toast-hide');
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, duration);
+}
+
 function renderCapabilityTag(el, status) {
   if (!el) return;
   el.className = 'cap-tag';
@@ -320,33 +353,28 @@ function updateUI(state) {
       const isBefore830 = curMins < 8 * 60 + 30;
       const isPast5PM = curMins >= 17 * 60;
 
+      startWorkBtn.disabled = false;
+      startWorkBtn.classList.remove('disabled-btn');
+
       if (state.hasCompletedShiftToday) {
-        startWorkBtn.disabled = true;
-        startWorkBtn.classList.add('disabled-btn');
-        startWorkBtn.innerHTML = '<span class="btn-icon">✓</span> Shift Completed Today';
+        startWorkBtn.innerHTML = '<span class="btn-icon">▶</span> Resume Work Session';
         if (shiftNoticeText) {
-          shiftNoticeText.textContent = "Today's work shift has concluded. Next work session starts tomorrow at 8:30 AM.";
+          shiftNoticeText.textContent = "Previous session was concluded today. Click to resume tracking your work.";
           shiftNoticeText.classList.add('visible');
         }
       } else if (isBefore830) {
-        startWorkBtn.disabled = true;
-        startWorkBtn.classList.add('disabled-btn');
-        startWorkBtn.innerHTML = '<span class="btn-icon">🔒</span> Clock-In Opens @ 8:30 AM';
+        startWorkBtn.innerHTML = '<span class="btn-icon">▶</span> Start Early Work Session';
         if (shiftNoticeText) {
-          shiftNoticeText.textContent = 'Shift Window: 8:30 AM – 5:00 PM. Clock-in button enables automatically at 8:30 AM.';
+          shiftNoticeText.textContent = 'Early Shift Tracking • Standard shift window opens at 9:00 AM.';
           shiftNoticeText.classList.add('visible');
         }
       } else if (isPast5PM) {
-        startWorkBtn.disabled = true;
-        startWorkBtn.classList.add('disabled-btn');
-        startWorkBtn.innerHTML = '<span class="btn-icon">🔒</span> Shift Concluded @ 5:00 PM';
+        startWorkBtn.innerHTML = '<span class="btn-icon">▶</span> Start Overtime Session';
         if (shiftNoticeText) {
-          shiftNoticeText.textContent = "Today's shift ended at 5:00 PM. Next work session starts tomorrow at 8:30 AM.";
+          shiftNoticeText.textContent = 'Overtime Session • Standard shift concluded at 5:00 PM.';
           shiftNoticeText.classList.add('visible');
         }
       } else {
-        startWorkBtn.disabled = false;
-        startWorkBtn.classList.remove('disabled-btn');
         startWorkBtn.innerHTML = '<span class="btn-icon">▶</span> Start Work Session';
         if (shiftNoticeText) {
           shiftNoticeText.textContent = '';
@@ -444,7 +472,7 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
   loginBtn.disabled = true;
-  if (loginBtnText) loginBtnText.textContent = 'Connecting...';
+  if (loginBtnText) loginBtnText.innerHTML = '<span class="btn-spinner"></span> Connecting to Server...';
 
   const apiUrl = (document.getElementById('apiUrl').value || '').trim() || 'https://highp-agent-backend.onrender.com';
   const email = (document.getElementById('email').value || '').trim();
@@ -455,14 +483,17 @@ loginForm.addEventListener('submit', async (e) => {
     if (success) {
       localStorage.setItem('agent_api_url', apiUrl);
       localStorage.setItem('agent_email', email);
-      // Clean password from memory and form
       const passInput = document.getElementById('password');
       if (passInput) passInput.value = '';
+      showToast('Signed in successfully!', 'success');
     } else {
       loginError.textContent = 'Invalid credentials or login failed.';
+      showToast('Invalid credentials. Please verify email and password.', 'error');
     }
   } catch (err) {
-    loginError.textContent = err.response?.data?.message || err.message || 'Connection error';
+    const errMsg = err.response?.data?.message || err.message || 'Connection error. Please check network/server.';
+    loginError.textContent = errMsg;
+    showToast(errMsg, 'error');
   } finally {
     loginBtn.disabled = false;
     if (loginBtnText) loginBtnText.textContent = 'Sign In & Connect';
@@ -472,31 +503,71 @@ loginForm.addEventListener('submit', async (e) => {
 logoutBtn.addEventListener('click', async () => {
   await window.agentApi.logout();
   localStorage.removeItem('agent_pass');
+  showToast('Logged out of workspace session.', 'info');
 });
 
 startWorkBtn.addEventListener('click', async () => {
+  if (startWorkBtn.disabled) return;
+  startWorkBtn.disabled = true;
+  const originalHtml = startWorkBtn.innerHTML;
+  startWorkBtn.innerHTML = '<span class="btn-spinner"></span> Starting Session...';
+  showToast('Connecting work session...', 'info');
+
   try {
     await window.agentApi.startWork();
+    showToast('Work session active! Monitoring started.', 'success');
   } catch (err) {
-    alert(err.message || 'Could not start work session.');
+    showToast(err.message || 'Could not start work session.', 'error');
+    startWorkBtn.disabled = false;
+    startWorkBtn.innerHTML = originalHtml;
   }
 });
 
 endWorkBtn.addEventListener('click', async () => {
+  if (endWorkBtn.disabled) return;
+  endWorkBtn.disabled = true;
+  const originalHtml = endWorkBtn.innerHTML;
+  endWorkBtn.innerHTML = '<span class="btn-spinner"></span> Concluding Session...';
+  showToast('Saving & concluding session...', 'info');
+
   try {
     await window.agentApi.endWork();
+    showToast('Work session successfully saved & ended.', 'success');
   } catch (err) {
-    console.error('Error ending work:', err);
+    showToast('Error ending work: ' + (err.message || 'Unknown error'), 'error');
+  } finally {
+    endWorkBtn.disabled = false;
+    endWorkBtn.innerHTML = originalHtml;
   }
 });
 
 startBreakBtn.addEventListener('click', async () => {
+  if (startBreakBtn.disabled) return;
+  startBreakBtn.disabled = true;
   const reason = breakReasonSelect.value;
-  await window.agentApi.startBreak(reason);
+  showToast(`Starting ${reason.toLowerCase()} break...`, 'info');
+  try {
+    await window.agentApi.startBreak(reason);
+    showToast('Break active. Session paused.', 'info');
+  } catch (err) {
+    showToast(err.message || 'Could not start break.', 'error');
+  } finally {
+    startBreakBtn.disabled = false;
+  }
 });
 
 endBreakBtn.addEventListener('click', async () => {
-  await window.agentApi.endBreak();
+  if (endBreakBtn.disabled) return;
+  endBreakBtn.disabled = true;
+  showToast('Resuming work...', 'info');
+  try {
+    await window.agentApi.endBreak();
+    showToast('Resumed work session! Tracking active.', 'success');
+  } catch (err) {
+    showToast(err.message || 'Could not resume work.', 'error');
+  } finally {
+    endBreakBtn.disabled = false;
+  }
 });
 
 // Forgot Password Modal Handlers
