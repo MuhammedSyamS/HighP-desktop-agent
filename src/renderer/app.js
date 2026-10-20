@@ -32,6 +32,12 @@ const activeTimer = document.getElementById('activeTimer');
 const idleTimer = document.getElementById('idleTimer');
 const breakTimer = document.getElementById('breakTimer');
 
+// Shift & Attendance Overview Elements
+const shiftOverviewCard = document.getElementById('shiftOverviewCard');
+const shiftStartTime = document.getElementById('shiftStartTime');
+const shiftTotalDuration = document.getElementById('shiftTotalDuration');
+const shiftAttendanceBadge = document.getElementById('shiftAttendanceBadge');
+
 // Action Controls
 const startWorkBtn = document.getElementById('startWorkBtn');
 const shiftNoticeText = document.getElementById('shiftNoticeText');
@@ -217,6 +223,59 @@ function updateUI(state) {
       const statusText = state.currentStatus || 'OFFLINE';
       statusBadge.textContent = statusText;
       statusBadge.className = `status-badge status-${statusText.toLowerCase()}`;
+
+      // Shift & Attendance Overview Bar (Start Work Time, Duration, Status)
+      if (shiftStartTime) {
+        if (state.workStartedAt) {
+          try {
+            const startDate = new Date(state.workStartedAt);
+            shiftStartTime.textContent = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch {
+            shiftStartTime.textContent = '--:--';
+          }
+        } else if (state.isWorking) {
+          shiftStartTime.textContent = 'Active Now';
+        } else {
+          shiftStartTime.textContent = '--:--';
+        }
+      }
+
+      if (shiftTotalDuration) {
+        let totalSec = Number(state.totalShiftSeconds || 0);
+        if (totalSec <= 0 && state.workStartedAt && state.isWorking) {
+          try {
+            const startMs = new Date(state.workStartedAt).getTime();
+            totalSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+          } catch {}
+        }
+        if (totalSec <= 0 && state.isWorking) {
+          totalSec = (state.activeSeconds || 0) + (state.idleSeconds || 0) + (state.breakSeconds || 0);
+        }
+        shiftTotalDuration.textContent = formatSeconds(totalSec);
+      }
+
+      if (shiftAttendanceBadge) {
+        let attStatus = state.todayAttendanceStatus;
+        if (!attStatus) {
+          if (state.isWorking) {
+            attStatus = state.isOnBreak ? 'ON BREAK' : 'PRESENT • ACTIVE';
+          } else if (state.hasCompletedShiftToday) {
+            attStatus = 'SHIFT COMPLETED';
+          } else {
+            attStatus = 'STANDBY';
+          }
+        }
+        shiftAttendanceBadge.textContent = attStatus;
+        if (attStatus.includes('ACTIVE') || attStatus === 'PRESENT') {
+          shiftAttendanceBadge.className = 'attendance-pill pill-present';
+        } else if (attStatus.includes('BREAK')) {
+          shiftAttendanceBadge.className = 'attendance-pill pill-break';
+        } else if (attStatus.includes('COMPLETED')) {
+          shiftAttendanceBadge.className = 'attendance-pill pill-completed';
+        } else {
+          shiftAttendanceBadge.className = 'attendance-pill pill-standby';
+        }
+      }
 
       // Active Application details
       const appInfo = state.currentApplicationInfo;
@@ -1063,6 +1122,22 @@ setInterval(() => {
     updateUI(latestState);
   }
 }, 5000);
+
+// 1-second live shift ticker while working
+setInterval(() => {
+  if (latestState && latestState.isWorking && shiftTotalDuration) {
+    if (latestState.workStartedAt) {
+      try {
+        const startMs = new Date(latestState.workStartedAt).getTime();
+        const totalSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+        shiftTotalDuration.textContent = formatSeconds(totalSec);
+      } catch {}
+    } else {
+      latestState.totalShiftSeconds = (latestState.totalShiftSeconds || 0) + 1;
+      shiftTotalDuration.textContent = formatSeconds(latestState.totalShiftSeconds);
+    }
+  }
+}, 1000);
 
 // Populate saved preferences & wire features on launch
 window.addEventListener('DOMContentLoaded', () => {

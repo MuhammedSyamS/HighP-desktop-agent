@@ -73,6 +73,9 @@ export interface AgentState {
   architecture?: string;
   capabilities?: PlatformCapabilities;
   permissions?: PlatformPermissions;
+  workStartedAt?: string | null;
+  totalShiftSeconds?: number;
+  todayAttendanceStatus?: string;
 }
 
 export class AgentService {
@@ -101,6 +104,7 @@ export class AgentService {
   private breakSeconds = 0;
   private hasCompletedShiftToday = false;
   private sessionStartHour: number = 9;
+  private sessionStartedAt?: string;
 
   // Application registry
   private dynamicRegistry: TrackedApplicationEntry[] = [];
@@ -271,6 +275,9 @@ export class AgentService {
         this.activeSeconds = sessRes.data.data.activeSeconds || 0;
         this.idleSeconds = sessRes.data.data.idleSeconds || 0;
         this.breakSeconds = sessRes.data.data.breakSeconds || 0;
+        if (sessRes.data.data.startedAt) {
+          this.sessionStartedAt = sessRes.data.data.startedAt;
+        }
         this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
       }
 
@@ -531,7 +538,14 @@ export class AgentService {
       platform: this.telemetryProvider.platform,
       architecture: this.telemetryProvider.architecture,
       capabilities: this.telemetryProvider.getCapabilities(),
-      permissions: this.telemetryProvider.getPermissions()
+      permissions: this.telemetryProvider.getPermissions(),
+      workStartedAt: this.sessionStartedAt || (this.isWorking ? (this.sessionStartedAt || new Date().toISOString()) : undefined),
+      totalShiftSeconds: (this.isWorking && this.sessionStartedAt)
+        ? Math.max(0, Math.floor((Date.now() - new Date(this.sessionStartedAt).getTime()) / 1000))
+        : (this.activeSeconds + this.idleSeconds + this.breakSeconds),
+      todayAttendanceStatus: this.isWorking
+        ? (this.isOnBreak ? 'ON_BREAK' : (currentState === ActivityState.IDLE ? 'IDLE' : 'PRESENT'))
+        : (this.hasCompletedShiftToday ? 'COMPLETED' : 'OFFLINE')
     };
   }
 
@@ -729,6 +743,7 @@ export class AgentService {
         this.activeSeconds = Number(res.data.data?.activeSeconds || 0);
         this.idleSeconds = Number(res.data.data?.idleSeconds || 0);
         this.breakSeconds = Number(res.data.data?.breakSeconds || 0);
+        this.sessionStartedAt = res.data.data?.startedAt || now.toISOString();
         startedRemote = true;
       }
     } catch (err: any) {
@@ -743,6 +758,7 @@ export class AgentService {
       this.activeSeconds = 0;
       this.idleSeconds = 0;
       this.breakSeconds = 0;
+      this.sessionStartedAt = now.toISOString();
     }
 
     this.trackingEngine.startSession(this.currentSessionId!, this.deviceIdentifier);
@@ -769,6 +785,7 @@ export class AgentService {
     this.isWorking = false;
     this.isOnBreak = false;
     this.currentSessionId = undefined;
+    this.sessionStartedAt = undefined;
     this.activeSeconds = 0;
     this.idleSeconds = 0;
     this.breakSeconds = 0;
@@ -942,16 +959,30 @@ export class AgentService {
         { headers: { Authorization: `Bearer ${this.token}` }, timeout: 5000 }
       );
 
-      if (res.data?.sessionEnded || res.data?.status === 'OFFLINE') {
+      if (res.data?.sessionEnded && res.data?.status === 'OFFLINE') {
         this.trackingEngine.endSession();
         this.isWorking = false;
         this.isOnBreak = false;
         this.currentSessionId = undefined;
+        this.sessionStartedAt = undefined;
         this.activeSeconds = 0;
         this.idleSeconds = 0;
         this.breakSeconds = 0;
         this.notifyStateChange();
         return;
+      }
+
+      if (res.data?.sessionId && res.data.sessionId !== this.currentSessionId) {
+        this.currentSessionId = res.data.sessionId;
+      }
+      if (res.data?.startedAt) {
+        this.sessionStartedAt = res.data.startedAt;
+      }
+      if (res.data?.activeSeconds != null && Number(res.data.activeSeconds) > this.activeSeconds) {
+        this.activeSeconds = Number(res.data.activeSeconds);
+      }
+      if (res.data?.idleSeconds != null && Number(res.data.idleSeconds) > this.idleSeconds) {
+        this.idleSeconds = Number(res.data.idleSeconds);
       }
 
       this.isOnline = true;

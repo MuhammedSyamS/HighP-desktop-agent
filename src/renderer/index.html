@@ -219,6 +219,32 @@
           <div id="statusBadge" class="status-badge status-offline">OFFLINE</div>
         </div>
 
+        <!-- Today's Shift & Attendance Overview Bar -->
+        <div class="shift-overview-card" id="shiftOverviewCard">
+          <div class="shift-stat-item">
+            <span class="shift-stat-label">START WORK TIME</span>
+            <div class="shift-stat-val-group">
+              <span class="shift-stat-icon">🕒</span>
+              <span id="shiftStartTime" class="shift-stat-val font-mono">--:--</span>
+            </div>
+          </div>
+          <div class="shift-divider"></div>
+          <div class="shift-stat-item">
+            <span class="shift-stat-label">HOW LONG WORKING</span>
+            <div class="shift-stat-val-group">
+              <span class="shift-stat-icon">⏳</span>
+              <span id="shiftTotalDuration" class="shift-stat-val font-mono">00:00:00</span>
+            </div>
+          </div>
+          <div class="shift-divider"></div>
+          <div class="shift-stat-item">
+            <span class="shift-stat-label">ATTENDANCE STATUS</span>
+            <div class="shift-stat-val-group">
+              <span id="shiftAttendanceBadge" class="attendance-pill pill-standby">STANDBY</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Foreground Application Box -->
         <div class="active-app-box">
           <div class="app-icon" id="appIcon">💻</div>
