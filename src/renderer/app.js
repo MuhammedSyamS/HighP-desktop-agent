@@ -1145,15 +1145,23 @@ window.addEventListener('DOMContentLoaded', () => {
   wirePresetChips();
   wireExtensionActions();
 
-  const savedUrl = localStorage.getItem('agent_api_url') || 'https://highp-agent-backend.onrender.com';
-  const savedEmail = localStorage.getItem('agent_email') || 'shamsaifudheen@gmail.com';
-  const savedPass = localStorage.getItem('agent_pass') || 'Password@123';
+  // Production backend URL default
+  const defaultProdUrl = 'https://highp-agent-backend.onrender.com';
+  let savedUrl = localStorage.getItem('agent_api_url');
+  // If empty or previously saved to localhost during development, reset to production cloud URL
+  if (!savedUrl || savedUrl.includes('localhost') || savedUrl.includes('127.0.0.1')) {
+    savedUrl = defaultProdUrl;
+    localStorage.setItem('agent_api_url', defaultProdUrl);
+  }
+
+  const savedEmail = localStorage.getItem('agent_email') || '';
+  const savedPass = localStorage.getItem('agent_pass') || '';
 
   const apiInput = document.getElementById('apiUrl');
   const emailInput = document.getElementById('email');
   const passInput = document.getElementById('password');
 
   if (apiInput) apiInput.value = savedUrl;
-  if (emailInput && !emailInput.value) emailInput.value = savedEmail;
-  if (passInput && !passInput.value) passInput.value = savedPass;
+  if (emailInput && !emailInput.value && savedEmail) emailInput.value = savedEmail;
+  if (passInput && !passInput.value && savedPass) passInput.value = savedPass;
 });

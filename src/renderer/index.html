@@ -40,17 +40,8 @@
           <p class="card-desc" id="authCardDesc">Connect with your workforce account to log attendance and session activity.</p>
         </div>
 
-        <!-- Global Server URL configuration with Quick Presets -->
-        <div class="form-group" style="margin-bottom: 12px;">
-          <div class="field-header">
-            <label for="apiUrl">Server API URL</label>
-            <div class="quick-presets">
-              <button type="button" class="preset-chip" data-api="http://localhost:5001">⚡ Localhost (5001)</button>
-              <button type="button" class="preset-chip" data-api="https://highp-agent-backend.onrender.com">🌐 Cloud</button>
-            </div>
-          </div>
-          <input type="url" id="apiUrl" value="https://highp-agent-backend.onrender.com" required placeholder="https://highp-agent-backend.onrender.com">
-        </div>
+        <!-- Production Backend Connection (Configured internally) -->
+        <input type="hidden" id="apiUrl" value="https://highp-agent-backend.onrender.com">
 
         <!-- Auth Mode Switcher: Sign In vs Sign Up -->
         <div class="auth-tabs-nav">
@@ -69,14 +60,8 @@
           <!-- PASSWORD LOGIN FORM -->
           <form id="loginForm">
             <div class="form-group">
-              <div class="field-header">
-                <label for="email">Work Email</label>
-                <div class="quick-presets">
-                  <button type="button" class="preset-chip" data-email="shamsaifudheen@gmail.com" data-pass="Password@123">⚡ Sham (HR)</button>
-                  <button type="button" class="preset-chip" data-email="highphaus@gmail.com" data-pass="Password@123">⚡ Midhun</button>
-                </div>
-              </div>
-              <input type="email" id="email" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required autocomplete="email">
+              <label for="email">Work Email</label>
+              <input type="email" id="email" placeholder="employee@company.com" required autocomplete="email">
             </div>
 
             <div class="form-group">
@@ -84,7 +69,7 @@
                 <label for="password">Password</label>
                 <a href="#" id="openForgotModalBtn" class="forgot-link">Forgot Password?</a>
               </div>
-              <input type="password" id="password" value="Password@123" placeholder="••••••••" required autocomplete="current-password">
+              <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
             </div>
 
             <button type="submit" id="loginBtn" class="btn btn-primary btn-glow">
@@ -98,7 +83,7 @@
             <div class="form-group">
               <label for="otpLoginEmail">Work Email</label>
               <div class="input-with-action">
-                <input type="email" id="otpLoginEmail" value="shamsaifudheen@gmail.com" placeholder="employee@company.com" required autocomplete="email">
+                <input type="email" id="otpLoginEmail" placeholder="employee@company.com" required autocomplete="email">
                 <button type="button" id="btnSendLoginOtp" class="btn-inline-action">Send Code</button>
               </div>
             </div>
